@@ -241,6 +241,8 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 			$url = 'https://pluraluat.v2.pinepg.in/api/checkout/v1/orders';
 		}
 
+		$callback_url=$this->getCallbackUrl();
+
 		  
 		  $payload = json_encode([
 			  'merchant_order_reference' => $order->getIncrementId() . '_' . date("ymdHis"),
@@ -248,13 +250,14 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 				  'value' => (int) $order->getBaseGrandTotal() * 100,
 				  'currency' => 'INR',
 			  ],
+			  'callback_url' => $callback_url,
 			  'pre_auth' => false,
 			  'purchase_details' => [
 				  'customer' => [
 					  'email_id' => $order->getBillingAddress()->getEmail(),
 					  'first_name' => $order->getBillingAddress()->getFirstname(),
 					  'last_name' => $order->getBillingAddress()->getLastname(),
-					  'customer_id' => $order->getCustomerId(),
+					  //'customer_id' => $order->getCustomerId(),
 					  'mobile_number' => $order->getBillingAddress()->getTelephone(),
 				  ],
 			  ],
@@ -302,6 +305,21 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 			  curl_close($curl); // Close the cURL session
 		  }
 	  }
+
+
+	  public function getCallbackUrl() {
+		// Check if running locally
+		if (strpos($_SERVER['HTTP_HOST'], 'localhost') !== false) {
+			// Local environment
+			return 'http://localhost/magento/pinepg/standard/response';
+		}
+	
+		// Production or staging environment
+		$protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
+		$domain = $protocol . $_SERVER['HTTP_HOST'];
+		
+		return $domain . '/pinepg/standard/response';
+	}
 	  
 	  public function getAccessToken()
 	  {
@@ -474,69 +492,19 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
         $this->logger->addWriter($writer);
 		$this->logger->info(__LINE__ . ' | '.__FUNCTION__);
  
-		$payment->setTransactionId($response['ppc_PinePGTransactionID']);
-        $payment->setAdditionalInformation(['ppc_Amount_in_paise: '. $response['ppc_Amount']]);
-		if (isset($response['ppc_Is_BrandEMITransaction']) ) 
-		{
-			if($response['ppc_Is_BrandEMITransaction']=="1")
-			{
-				 $payment->setAdditionalInformation(['ppc_Is_BrandEMITransaction: '. $response['ppc_Is_BrandEMITransaction']]);			
-			}
-		}
-		if (isset($response['ppc_Is_BankEMITransaction']) ||isset($response['ppc_Is_BankEMITransaction'])) 
-		{	
-			if($response['ppc_Is_BankEMITransaction']=="1")
-			{
-				 $payment->setAdditionalInformation(['ppc_Is_BankEMITransaction: '. $response['ppc_Is_BankEMITransaction']]);			
-			}
-		}
-		 
-		if (isset($response['ppc_IssuerName']) ) 
-		{
-			$payment->setAdditionalInformation(['ppc_IssuerName: '. $response['ppc_IssuerName']]);
-		}
+		$payment->setTransactionId($response['order_id']);
+        
+		$dateTime=date('Y-m-d H:i:s');
 		
-		if (isset($response['ppc_EMIInterestRatePercent']) ) 
-		{
-			$payment->setAdditionalInformation(['ppc_EMIInterestRatePercent: '. $response['ppc_EMIInterestRatePercent']]);
-		}
-		if (isset($response['ppc_EMIAmountPayableEachMonth']) ) 
-		{
-			$payment->setAdditionalInformation(['ppc_EMIAmountPayableEachMonth: '. $response['ppc_EMIAmountPayableEachMonth']]);
-		}
-		
-		if (isset($response['ppc_EMITotalDiscCashBackPercent']) ) 
-		{
-			$payment->setAdditionalInformation(['ppc_EMITotalDiscCashBackPercent: '. $response['ppc_EMITotalDiscCashBackPercent']]);
-		}
-	    if (isset($response['ppc_EMITotalDiscCashBackAmt']) ) 
-		{
-			 $payment->setAdditionalInformation(['ppc_EMITotalDiscCashBackAmt: '. $response['ppc_EMITotalDiscCashBackAmt']]);
-		}
-	   
-		if (isset($response['ppc_EMITenureMonth']) ) 
-		{
-		  $payment->setAdditionalInformation(['ppc_EMITenureMonth: '. $response['ppc_EMITenureMonth']]);
-		}
-	    if (isset($response['ppc_EMICashBackType']) ) 
-		{
-			 $payment->setAdditionalInformation(['ppc_EMICashBackType: '. $response['ppc_EMICashBackType']]);
-		}
-	    if (isset($response['ppc_EMIAdditionalCashBack']) ) 
-		{
-			 $payment->setAdditionalInformation(['ppc_EMIAdditionalCashBack: '.$response['ppc_EMIAdditionalCashBack']]);
-		}
 				
         $payment->addTransaction("order");
-        $payment->setIsTransactionClosed(0);
-		$payment->setAmountPaid($response['ppc_Amount']); 
+        $payment->setIsTransactionClosed(0); 
         $payment->place();
-		$order->setTotalPaid($response['ppc_Amount']/100); 
         $order->setStatus('processing');
 		// Add a comment to the order
-		$order->addStatusHistoryComment('<b>UniqueMerchantTxnID </b>'.$response['ppc_UniqueMerchantTxnID'].', <b>Txn Id:</b> '. $response['ppc_PinePGTransactionID'].', <b>Txn DateTime:</b> '. $response['ppc_TransactionCompletionDateTime']. ', <b>Txn Status:</b> '. $response['ppc_TxnResponseMessage']);
+		$order->addStatusHistoryComment('<b>UniqueMerchantTxnID </b>'.$response['order_id']. ', <b>Txn Status:</b> '. $response['status']);
         $order->save();
-		$this->logger->info(__LINE__ . ' | '.__FUNCTION__.' Save the order after successful response from Pine PG for order id:'.$response['ppc_UniqueMerchantTxnID'].'and Pine PG Txn ID:'.$response['ppc_PinePGTransactionID'] );
+		$this->logger->info(__LINE__ . ' | '.__FUNCTION__.' Save the order after successful response from Pine PG for order id:'.$response['order_id'].'and Pine PG Txn ID:'.$response['order_id'] );
     }
 
 	private function checkCartType($product_info_data,$params,$order)

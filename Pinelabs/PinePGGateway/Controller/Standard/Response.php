@@ -66,7 +66,17 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
                 return $resultRedirect;
             }
 
+            $paymentMethod = $this->getPaymentMethod();
+
             $orderId = $callbackData['order_id'];
+
+            $status = $callbackData['status'];
+
+            if ( $status!='PROCESSED') {
+                $this->logger->err('Order is not process: ' . $orderId);
+                $resultRedirect->setPath('checkout/onepage/failure');
+                return $resultRedirect;
+            }
 
             // Retrieve the entity_id using the plural_order_id (order_id from callback)
             $objectManager = \Magento\Framework\App\ObjectManager::getInstance();
@@ -98,6 +108,11 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
                 ->setStatus(\Magento\Sales\Model\Order::STATE_PROCESSING);
 
             $order->save();
+
+            $DateTime=date('Y-m-d H:i:s');
+            $payment = $order->getPayment();
+
+            $paymentMethod->postProcessing($order, $payment, $callbackData);
 
             $this->logger->info('Checkout Session Order ID: ' . $this->checkoutSession->getLastOrderId());
 
