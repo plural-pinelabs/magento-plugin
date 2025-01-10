@@ -12,7 +12,7 @@ class UpgradeSchema implements UpgradeSchemaInterface
     {
         $setup->startSetup();
 
-        if (version_compare($context->getVersion(), '2.3.1', '<')) {
+        
             $connection = $setup->getConnection();
             $tableName = $setup->getTable('sales_order');
 
@@ -28,7 +28,7 @@ class UpgradeSchema implements UpgradeSchemaInterface
                     ]
                 );
             }
-        }
+        
 
         $setup->endSetup();
     }
