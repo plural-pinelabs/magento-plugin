@@ -502,7 +502,7 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
         $payment->place();
         $order->setStatus('processing');
 		// Add a comment to the order
-		$order->addStatusHistoryComment('<b>UniqueMerchantTxnID </b>'.$response['order_id']. ', <b>Txn Status:</b> '. $response['status']);
+		$order->addStatusHistoryComment('Payment successfull for order <b>Pinelabs Payment Id: </b>'.$response['order_id']. ', <b>Txn Status:</b> '. $response['status']);
         $order->save();
 		$this->logger->info(__LINE__ . ' | '.__FUNCTION__.' Save the order after successful response from Pine PG for order id:'.$response['order_id'].'and Pine PG Txn ID:'.$response['order_id'] );
     }

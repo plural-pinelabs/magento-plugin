@@ -1,0 +1,27 @@
+<?php
+$formKey = $block->getFormKey();
+$refundUrl = $block->getRefundUrl();
+$orderId = $block->getOrderId();
+$amount = $block->getAmount();
+?>
+<form method="post" action="<?= $refundUrl ?>" style="max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9; border-radius: 8px;">
+    <?= $block->getFormKeyHtml() ?>
+    <input type="hidden" name="form_key" value="<?php echo $this->getFormKey(); ?>" />
+
+    <div style="margin-bottom: 15px;">
+        <label for="order_id" style="display: block; font-weight: bold; margin-bottom: 5px;">Order ID: <?= $orderId ?></label>
+        <input type="hidden" id="order_id" name="order_id" value="<?= $orderId ?>" readonly required style="width: 100%; padding: 8px; background-color: #f1f1f1; border: 1px solid #ddd; border-radius: 4px;">
+    </div>
+
+    <div style="margin-bottom: 15px;">
+        <label for="amount" style="display: block; font-weight: bold; margin-bottom: 5px;">Amount: <?= $amount ?></label>
+        <input type="hidden" id="amount" name="amount" value="<?= $amount ?>" step="0.01" required style="width: 100%; padding: 8px; background-color: #f1f1f1; border: 1px solid #ddd; border-radius: 4px;">
+    </div>
+
+    <div style="margin-bottom: 15px;">
+        <label for="reason" style="display: block; font-weight: bold; margin-bottom: 5px;">Reason:</label>
+        <textarea id="reason" name="reason" placeholder="Enter Refund Reason" required style="width: 100%; height: 150px; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; resize: vertical;"></textarea>
+    </div>
+
+    <button type="submit" class="action-default scalable" style="padding: 10px 20px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; width: 100%;">Process Refund</button>
+</form>
