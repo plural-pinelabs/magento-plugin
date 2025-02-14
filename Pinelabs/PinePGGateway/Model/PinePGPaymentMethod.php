@@ -320,6 +320,62 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 		
 		return $domain . '/pinepg/standard/response';
 	}
+
+
+	public function callEnquiryApi($orderId) {
+
+		$writer = new \Zend_Log_Writer_Stream(BP . '/var/log/PinePG/'.date("Y-m-d").'.log');
+        $this->logger = new \Zend_Log();
+        $this->logger->addWriter($writer);
+
+		$authorization = $this->getAccessToken();
+		$env = $this->getConfigData('PayEnvironment');
+	
+		// Define the URL based on the environment
+		$url = ($env === 'LIVE') 
+			? "https://api.pluralpay.in/api/pay/v1/orders/$orderId"
+			: "https://pluraluat.v2.pinepg.in/api/pay/v1/orders/$orderId";
+	
+		// Set the request headers
+		$headers = [
+			"Authorization: Bearer " . trim($authorization),
+			"Content-Type: application/json"
+		];
+	
+		// Initialize cURL
+		$curl = curl_init();
+		curl_setopt_array($curl, [
+			CURLOPT_URL => $url,
+			CURLOPT_RETURNTRANSFER => true, // Return response as a string
+			CURLOPT_HTTPHEADER => $headers, // Set the headers
+			CURLOPT_SSL_VERIFYPEER => false // Ignore SSL certificate verification (if needed)
+		]);
+	
+		try {
+			// Execute the request and capture the response
+			$response = curl_exec($curl);
+	
+			if ($response === false) {
+				$this->logger->info(__LINE__ . ' | '.__FUNCTION__.' Enquiry API Response for V3: '.  curl_error($curl));
+				throw new \Exception('cURL Error: ' . curl_error($curl));
+			}
+
+			$this->logger->info(__LINE__ . ' | '.__FUNCTION__.' Enquiry API Response for V3: '. $response);
+	
+			// Decode the JSON response
+			$response = json_decode($response, true);
+	
+			if (isset($response)) {
+				return $response; // Return the API response
+			} else {
+				throw new \Exception('Invalid response from API');
+			}
+		} catch (\Exception $e) {
+			throw new \Exception('Error during API call: ' . $e->getMessage());
+		} finally {
+			curl_close($curl); // Close the cURL session
+		}
+	}
 	  
 	  public function getAccessToken()
 	  {

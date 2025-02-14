@@ -70,7 +70,13 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
 
             $orderId = $callbackData['order_id'];
 
-            $status = $callbackData['status'];
+            $statusEnquiry = $callbackData['status'];
+            
+
+            if(!empty($orderId)){
+                $EnquiryApiResponse = $this->pinePGPaymentMethod->callEnquiryApi($orderId);
+                $statusEnquiry = $EnquiryApiResponse['data']['status'] ?? null;
+            }
 
             if ( $status!='PROCESSED') {
                 $this->logger->err('Order is not process: ' . $orderId);
