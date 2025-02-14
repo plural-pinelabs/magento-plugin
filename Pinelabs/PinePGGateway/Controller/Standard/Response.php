@@ -78,7 +78,7 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
                 $statusEnquiry = $EnquiryApiResponse['data']['status'] ?? null;
             }
 
-            if ( $status!='PROCESSED') {
+            if ( $statusEnquiry!='PROCESSED') {
                 $this->logger->err('Order is not process: ' . $orderId);
                 $resultRedirect->setPath('checkout/onepage/failure');
                 return $resultRedirect;
