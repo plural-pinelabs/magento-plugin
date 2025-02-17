@@ -243,6 +243,12 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 
 		$callback_url=$this->getCallbackUrl();
 
+		$telephone=$order->getBillingAddress()->getTelephone();
+		$onlyNumbers = preg_replace('/\D/', '', $telephone);
+		if (empty($onlyNumbers)) {
+			$onlyNumbers = '9999999999'; // Default value if empty
+		}
+
 		  
 		  $payload = json_encode([
 			  'merchant_order_reference' => $order->getIncrementId() . '_' . date("ymdHis"),
@@ -258,7 +264,7 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 					  'first_name' => $order->getBillingAddress()->getFirstname(),
 					  'last_name' => $order->getBillingAddress()->getLastname(),
 					  //'customer_id' => $order->getCustomerId(),
-					  'mobile_number' => $order->getBillingAddress()->getTelephone(),
+					  'mobile_number' => $onlyNumbers,
 				  ],
 			  ],
 		  ]);
