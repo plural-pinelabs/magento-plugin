@@ -233,82 +233,142 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 
 	  public function callOrderApi($order)
 	  {
-
-		$env = $this->getConfigData('PayEnvironment');
-        if ($env === 'LIVE') {
-			$url = 'https://api.pluralpay.in/api/checkout/v1/orders';
-        }else{
-			$url = 'https://pluraluat.v2.pinepg.in/api/checkout/v1/orders';
-		}
-
-		$callback_url=$this->getCallbackUrl();
-
-		$telephone=$order->getBillingAddress()->getTelephone();
-		$onlyNumbers = preg_replace('/\D/', '', $telephone);
-		if (empty($onlyNumbers)) {
-			$onlyNumbers = '9999999999'; // Default value if empty
-		}
-
-		  
-		  $payload = json_encode([
+		  $writer = new \Zend_Log_Writer_Stream(BP . '/var/log/PinePG/' . date("Y-m-d") . '.log');
+		  $this->logger = new \Zend_Log();
+		  $this->logger->addWriter($writer);
+	  
+		  $env = $this->getConfigData('PayEnvironment');
+		  $url = ($env === 'LIVE') 
+			  ? 'https://api.pluralpay.in/api/checkout/v1/orders'
+			  : 'https://pluraluat.v2.pinepg.in/api/checkout/v1/orders';
+	  
+		  $callback_url = $this->getCallbackUrl();
+		  $telephone = $order->getBillingAddress()->getTelephone();
+		  $onlyNumbers = preg_replace('/\D/', '', $telephone);
+		  if (empty($onlyNumbers)) {
+			  $onlyNumbers = '9999999999'; // Default value if empty
+		  }
+	  
+		  // Retrieve Billing and Shipping Addresses
+		  $billingAddress = $order->getBillingAddress();
+		  $shippingAddress = $order->getShippingAddress();
+	  
+		  // Fallback: Use Shipping Address if Billing Address is missing
+		  $billingAddressData = $billingAddress ?: $shippingAddress;
+	  
+		  // Helper function to format addresses
+		  $formatAddress = function ($address) {
+			  return [
+				  'address1' => substr($address->getStreetLine(1), 0, 99),
+				  'pincode'  => $address->getPostcode(),
+				  'city'     => $address->getCity(),
+				  'state'    => $address->getRegion(),
+				  'country'  => $address->getCountryId()
+			  ];
+		  };
+	  
+		  $billingData = $formatAddress($billingAddressData);
+		  $shippingData = $formatAddress($shippingAddress);
+	  
+		  // Get ordered products and replicate as per quantity
+		  $products = [];
+		  foreach ($order->getAllVisibleItems() as $item) {
+			  $product = $item->getProduct();
+			  $productPrice = intval(floatval($item->getBasePrice()) * 100);
+			  $productDiscount = intval(floatval($item->getDiscountAmount()) * 100);
+			  $quantity = intval(explode('.', $item->getQtyOrdered())[0]);
+	  
+			  for ($j = 0; $j < $quantity; $j++) {
+				  $productData = [
+					  'product_code' => $product->getSku(),
+					  'product_amount' => [
+						  'value' => $productPrice,
+						  'currency' => 'INR',
+					  ],
+				  ];
+				  if ($productDiscount > 0) {
+					  $productData['product_coupon_discount_amount'] = [
+						  'value' => $productDiscount,
+						  'currency' => 'INR',
+					  ];
+				  }
+				  $products[] = $productData;
+			  }
+		  }
+	  
+		  $cartDiscount = intval(floatval($order->getDiscountAmount()) * 100);
+	  
+		  $this->logger->info(__LINE__ . ' | ' . __FUNCTION__ . ' V3 Create order API started with order id: ' . $order->getIncrementId());
+	  
+		  // Construct payload
+		  $payload = [
 			  'merchant_order_reference' => $order->getIncrementId() . '_' . date("ymdHis"),
 			  'order_amount' => [
-				  'value' => (int) $order->getBaseGrandTotal() * 100,
+				  'value' => intval(floatval($order->getBaseGrandTotal()) * 100),
 				  'currency' => 'INR',
 			  ],
 			  'callback_url' => $callback_url,
 			  'pre_auth' => false,
 			  'purchase_details' => [
 				  'customer' => [
-					  'email_id' => $order->getBillingAddress()->getEmail(),
-					  'first_name' => $order->getBillingAddress()->getFirstname(),
-					  'last_name' => $order->getBillingAddress()->getLastname(),
-					  //'customer_id' => $order->getCustomerId(),
+					  'email_id' => $billingAddressData->getEmail(),
+					  'first_name' => $billingAddressData->getFirstname(),
+					  'last_name' => $billingAddressData->getLastname(),
 					  'mobile_number' => $onlyNumbers,
+					  'billing_address' => $billingData,
+					  'shipping_address' => $shippingData,
 				  ],
+				  'products' => $products,
 			  ],
-		  ]);
+		  ];
+	  
+		  if ($cartDiscount > 0) {
+			  $payload['cart_coupon_discount_amount'] = [
+				  'value' => $cartDiscount,
+				  'currency' => 'INR',
+			  ];
+		  }
+	  
+		  $payloadJson = json_encode($payload, JSON_PRETTY_PRINT);
+		  $this->logger->info(__LINE__ . ' | ' . __FUNCTION__ . ' Request Payload: ' . $payloadJson);
 	  
 		  $headers = [
 			  'Content-Type: application/json',
-			  'Merchant-ID:'.$this->getConfigData("MerchantId"),
+			  'Merchant-ID: ' . $this->getConfigData("MerchantId"),
 			  'Authorization: Bearer ' . $this->getAccessToken(),
 		  ];
 	  
-		  // Initialize cURL
 		  $curl = curl_init();
 		  curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);
-		  
 		  curl_setopt_array($curl, [
 			  CURLOPT_URL => $url,
-			  CURLOPT_RETURNTRANSFER => true, // Return response as string
-			  CURLOPT_HTTPHEADER => $headers, // Set the headers
-			  CURLOPT_POST => true, // HTTP POST method
-			  CURLOPT_POSTFIELDS => $payload, // Set the POST data
+			  CURLOPT_RETURNTRANSFER => true,
+			  CURLOPT_HTTPHEADER => $headers,
+			  CURLOPT_POST => true,
+			  CURLOPT_POSTFIELDS => $payloadJson,
 		  ]);
 	  
 		  try {
-			  // Execute the request and capture the response
 			  $response = curl_exec($curl);
-	  
 			  if ($response === false) {
+				  $this->logger->info(__LINE__ . ' | ' . __FUNCTION__ . ' Create order API for V3 failed at cURL level, response: ' . curl_error($curl));
 				  throw new \Exception('cURL Error: ' . curl_error($curl));
 			  }
 	  
 			  $response = json_decode($response, true);
 	  
 			  if (isset($response['redirect_url']) && $response['response_code'] === 200) {
-				$order->setData('plural_order_id', $response['order_id']);
-                $this->orderRepository->save($order);
-
+				  $order->setData('plural_order_id', $response['order_id']);
+				  $this->orderRepository->save($order);
 				  return $response['redirect_url'];
 			  } else {
+				  $this->logger->info(__LINE__ . ' | ' . __FUNCTION__ . ' Create order API for V3 failed at response level, response: ' . json_encode($response));
 				  throw new \Exception($response['response_message'] ?? 'Unknown error');
 			  }
 		  } catch (\Exception $e) {
 			  throw new \Exception('Error during API request: ' . $e->getMessage());
 		  } finally {
-			  curl_close($curl); // Close the cURL session
+			  curl_close($curl);
 		  }
 	  }
 
