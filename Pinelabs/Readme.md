@@ -1,4 +1,4 @@
-# PInelabs Edge 2.3.4v
+# Pinelabs Magento Plugin for V3 api's
 
 ## This is a Magneto2 Extension
 
@@ -23,7 +23,7 @@
 
 # Supported Magento Version
 
- - 2.3.4
+ - 2.3.4 , - 2.4.2
 
 # Features
 
