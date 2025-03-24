@@ -18,6 +18,10 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
     protected $customerSession;
     protected $checkoutSession;
 
+    protected $orderFactory;
+
+    protected $orderSender;
+
     public function __construct(
         \Magento\Framework\App\Action\Context $context,
         \Magento\Customer\Model\Customer $customer,
@@ -34,7 +38,8 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
         \Magento\Framework\Controller\ResultFactory $resultFactory,
         \Magento\Framework\Encryption\EncryptorInterface $encryptorInterface,
         \Magento\Framework\Url\EncoderInterface $encoderInterface,
-        \Magento\Framework\Filesystem $filesystem
+        \Magento\Framework\Filesystem $filesystem,
+        \Magento\Sales\Model\Order\Email\Sender\OrderSender  $orderSender
     ) {
         parent::__construct($context, $customerSession, $checkoutSession, $quoteRepository, $orderFactory, $logger, $paymentMethod, $checkoutHelper, $cartManagement, $resultJsonFactory, $filesystem);
         $this->config = $config;
@@ -45,6 +50,8 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
         $this->customer = $customer;
         $this->customerSession = $customerSession;
         $this->checkoutSession = $checkoutSession;
+        $this->orderFactory = $orderFactory;
+        $this->orderSender = $orderSender;
     }
 
     public function execute()
@@ -57,11 +64,12 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
         try {
             $callbackData = $this->getRequest()->getPostValue();
 
+
             // Log the callback data for debugging
             $this->logger->info('PinePG callback data: ' . json_encode($callbackData));
 
             if (!isset($callbackData['order_id'])) {
-                $this->logger->err('No order_id received in callback data.');
+                $this->logger->err('No order_id received in callback data.'. json_encode($callbackData));
                 $resultRedirect->setPath('checkout/onepage/failure');
                 return $resultRedirect;
             }
@@ -84,15 +92,16 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
                 return $resultRedirect;
             }
 
-            // Retrieve the entity_id using the plural_order_id (order_id from callback)
-            $objectManager = \Magento\Framework\App\ObjectManager::getInstance();
-            $resource = $objectManager->get('Magento\Framework\App\ResourceConnection');
-            $connection = $resource->getConnection();
 
-            $tableName = $resource->getTableName('sales_order');
 
-            $query = "SELECT entity_id FROM $tableName WHERE plural_order_id = :order_id LIMIT 1";
-            $entityId = $connection->fetchOne($query, ['order_id' => $orderId]);
+                $order = $this->orderFactory->create()->load($orderId, 'plural_order_id');
+
+               
+                if ($order->getId()) {
+                    $entityId =  $order->getId(); // entity_id
+                }
+
+           
 
             if (!$entityId) {
                 $this->logger->err('No matching order found for order_id: ' . $orderId);
@@ -100,8 +109,8 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
                 return $resultRedirect;
             }
 
-            // Load the order using entity_id
-            $order = $objectManager->create('Magento\Sales\Model\Order')->load($entityId);
+            
+           // $order = $this->orderFactory->create()->load($entityId);
 
             if (!$order->getId()) {
                 $this->logger->err('Failed to load order with entity_id: ' . $entityId);
@@ -127,8 +136,7 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
 
             // Optionally send order confirmation email
             try {
-                $orderSender = $objectManager->create('Magento\Sales\Model\Order\Email\Sender\OrderSender');
-                $orderSender->send($order);
+                $this->orderSender->send($order);
             } catch (\Exception $e) {
                 $this->logger->critical('Error sending order email: ' . $e->getMessage());
             }

@@ -17,6 +17,9 @@ class PinePG extends AbstractHelper
     protected $quote;
     protected $quoteManagement;
     protected $transactionBuilder;
+
+    protected $orderRepository;
+    protected $scopeConfig;
  
 
     public function __construct(
@@ -36,10 +39,7 @@ class PinePG extends AbstractHelper
         $this->transactionBuilder = $transactionBuilder;
         parent::__construct($context);
 
-        $logPath = BP . '/var/log/PinePG/' . date("Y-m-d") . '.log';
-        $writer = new \Zend_Log_Writer_Stream($logPath);
-        $this->logger = new \Zend_Log();
-        $this->logger->addWriter($writer);
+        
     }
 
     public function cancelCurrentOrder($comment)
