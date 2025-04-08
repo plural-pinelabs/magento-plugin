@@ -272,6 +272,7 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 		  $shippingData = $formatAddress($shippingAddress);
 	  
 		  // Get ordered products and replicate as per quantity
+		  $invalid_sku_found = false;
 		  $products = [];
 		  $totalProductPrice=0;
 		  foreach ($order->getAllVisibleItems() as $item) {
@@ -279,10 +280,23 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 			  $productPrice = intval(floatval($item->getBasePrice()) * 100);
 			  $productDiscount = intval(floatval($item->getDiscountAmount()) * 100);
 			  $quantity = intval(explode('.', $item->getQtyOrdered())[0]);
+			  $sku = $item->getSku();
+
+			 
+
+			  // If SKU is null or empty string, stop processing and clear $products
+			  if (empty($sku)) {
+				$invalid_sku_found = true;
+				break;
+			}
+
+			$this->logger->info('Item: ' . $item->getName() . ', SKU: ' . $item->getSku() . ', invalid_sku_found: ' . $invalid_sku_found);
+
+
 			  for ($j = 0; $j < $quantity; $j++) {
 				$totalProductPrice=$totalProductPrice+$productPrice;
 				  $productData = [
-					  'product_code' => $product->getSku(),
+					  'product_code' => $sku,
 					  'product_amount' => [
 						  'value' => $productPrice,
 						  'currency' => 'INR',
@@ -291,6 +305,9 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 				  $products[] = $productData;
 			  }
 		  }
+
+
+		 
 
 		  $baseAmount=intval(floatval($order->getBaseGrandTotal()) * 100);
 
@@ -307,9 +324,31 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 				$products[] = $productData;
 			}
 		 
+
+			if ($invalid_sku_found) {
+				$products = []; // make sure it's reset after the loop
+			}
 	  
 		  $this->logger->info(__LINE__ . ' | ' . __FUNCTION__ . ' V3 Create order API started with order id: ' . $order->getIncrementId());
 	  
+
+		   // Prepare purchase details
+		   $purchase_details = [
+			'customer' => [
+				'email_id' => $billingAddressData->getEmail(),
+				'first_name' => $billingAddressData->getFirstname(),
+				'last_name' => $billingAddressData->getLastname(),
+				'mobile_number' => $onlyNumbers,
+				'billing_address' => $billingData,
+				'shipping_address' => $shippingData,
+			]
+		];
+
+		if (!empty($products)) {
+			$purchase_details['products'] = $products;
+		}
+		  
+		 
 		  // Construct payload
 		  $payload = [
 			  'merchant_order_reference' => $order->getIncrementId() . '_' . date("ymdHis"),
@@ -319,18 +358,15 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 			  ],
 			  'callback_url' => $callback_url,
 			  'pre_auth' => false,
-			  'purchase_details' => [
-				  'customer' => [
-					  'email_id' => $billingAddressData->getEmail(),
-					  'first_name' => $billingAddressData->getFirstname(),
-					  'last_name' => $billingAddressData->getLastname(),
-					  'mobile_number' => $onlyNumbers,
-					  'billing_address' => $billingData,
-					  'shipping_address' => $shippingData,
-				  ],
-				  'products' => $products,
+			  'integration_mode'=> "REDIRECT",
+			  "plugin_data"=> [
+					"plugin_type" => "Magento",
+					"plugin_version" => "V3"
 			  ],
+			  'purchase_details' =>$purchase_details,
 		  ];
+
+		 
 
 
 		  if ($productDiscount > 0) {
