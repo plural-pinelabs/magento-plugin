@@ -133,10 +133,7 @@ abstract class PinePGAbstract extends \Magento\Framework\App\Action\Action imple
      */
     protected function getOrderById($order_id)
     {
-        $objectManager = \Magento\Framework\App\ObjectManager::getInstance();
-        $order = $objectManager->get('Magento\Sales\Model\Order');
-        $order_info = $order->loadByIncrementId($order_id);
-        return $order_info;
+         return $this->_orderFactory->create()->loadByIncrementId($order_id);
     }
 
     /**

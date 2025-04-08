@@ -58,8 +58,6 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
         $this->checkoutSession = $checkoutSession;
         $this->cart = $cart;
 		$this->orderRepository = $orderRepository;
-		// $this->_countryHelper = \Magento\Framework\App\ObjectManager::getInstance()->get('\Magento\Directory\Model\Country');
-
 		$this->_countryHelper = $countryHelper;
 
         parent::__construct(
@@ -236,6 +234,9 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 		  $writer = new \Zend_Log_Writer_Stream(BP . '/var/log/PinePG/' . date("Y-m-d") . '.log');
 		  $this->logger = new \Zend_Log();
 		  $this->logger->addWriter($writer);
+
+		  $this->logger->info(__LINE__ . ' | ' . __FUNCTION__ . ' Complete Order Data: ' . json_encode($order->getData(), JSON_PRETTY_PRINT));
+
 	  
 		  $env = $this->getConfigData('PayEnvironment');
 		  $url = ($env === 'LIVE') 
@@ -271,35 +272,83 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 		  $shippingData = $formatAddress($shippingAddress);
 	  
 		  // Get ordered products and replicate as per quantity
+		  $invalid_sku_found = false;
 		  $products = [];
+		  $totalProductPrice=0;
 		  foreach ($order->getAllVisibleItems() as $item) {
 			  $product = $item->getProduct();
 			  $productPrice = intval(floatval($item->getBasePrice()) * 100);
 			  $productDiscount = intval(floatval($item->getDiscountAmount()) * 100);
 			  $quantity = intval(explode('.', $item->getQtyOrdered())[0]);
-	  
+			  $sku = $item->getSku();
+
+			 
+
+			  // If SKU is null or empty string, stop processing and clear $products
+			  if (empty($sku)) {
+				$invalid_sku_found = true;
+				break;
+			}
+
+			$this->logger->info('Item: ' . $item->getName() . ', SKU: ' . $item->getSku() . ', invalid_sku_found: ' . $invalid_sku_found);
+
+
 			  for ($j = 0; $j < $quantity; $j++) {
+				$totalProductPrice=$totalProductPrice+$productPrice;
 				  $productData = [
-					  'product_code' => $product->getSku(),
+					  'product_code' => $sku,
 					  'product_amount' => [
 						  'value' => $productPrice,
 						  'currency' => 'INR',
 					  ],
 				  ];
-				  if ($productDiscount > 0) {
-					  $productData['product_coupon_discount_amount'] = [
-						  'value' => $productDiscount,
-						  'currency' => 'INR',
-					  ];
-				  }
 				  $products[] = $productData;
 			  }
 		  }
-	  
-		  $cartDiscount = intval(floatval($order->getDiscountAmount()) * 100);
+
+
+		 
+
+		  $baseAmount=intval(floatval($order->getBaseGrandTotal()) * 100);
+
+		  if($baseAmount>$totalProductPrice){
+                $additional_amount=$baseAmount-$totalProductPrice;
+				$productData = [
+					'product_code' => 'additional_charges',
+					'product_amount' => [
+						'value' => $additional_amount,
+						'currency' => 'INR',
+					],
+				];
+
+				$products[] = $productData;
+			}
+		 
+
+			if ($invalid_sku_found) {
+				$products = []; // make sure it's reset after the loop
+			}
 	  
 		  $this->logger->info(__LINE__ . ' | ' . __FUNCTION__ . ' V3 Create order API started with order id: ' . $order->getIncrementId());
 	  
+
+		   // Prepare purchase details
+		   $purchase_details = [
+			'customer' => [
+				'email_id' => $billingAddressData->getEmail(),
+				'first_name' => $billingAddressData->getFirstname(),
+				'last_name' => $billingAddressData->getLastname(),
+				'mobile_number' => $onlyNumbers,
+				'billing_address' => $billingData,
+				'shipping_address' => $shippingData,
+			]
+		];
+
+		if (!empty($products)) {
+			$purchase_details['products'] = $products;
+		}
+		  
+		 
 		  // Construct payload
 		  $payload = [
 			  'merchant_order_reference' => $order->getIncrementId() . '_' . date("ymdHis"),
@@ -309,25 +358,25 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 			  ],
 			  'callback_url' => $callback_url,
 			  'pre_auth' => false,
-			  'purchase_details' => [
-				  'customer' => [
-					  'email_id' => $billingAddressData->getEmail(),
-					  'first_name' => $billingAddressData->getFirstname(),
-					  'last_name' => $billingAddressData->getLastname(),
-					  'mobile_number' => $onlyNumbers,
-					  'billing_address' => $billingData,
-					  'shipping_address' => $shippingData,
-				  ],
-				  'products' => $products,
+			  'integration_mode'=> "REDIRECT",
+			  "plugin_data"=> [
+					"plugin_type" => "Magento",
+					"plugin_version" => "V3"
 			  ],
+			  'purchase_details' =>$purchase_details,
 		  ];
+
+		 
+
+
+		  if ($productDiscount > 0) {
+			$payload['cart_coupon_discount_amount'] = [
+				'value' => $productDiscount,
+				'currency' => 'INR',
+			];
+		}
 	  
-		  if ($cartDiscount > 0) {
-			  $payload['cart_coupon_discount_amount'] = [
-				  'value' => $cartDiscount,
-				  'currency' => 'INR',
-			  ];
-		  }
+		 
 	  
 		  $payloadJson = json_encode($payload, JSON_PRETTY_PRINT);
 		  $this->logger->info(__LINE__ . ' | ' . __FUNCTION__ . ' Request Payload: ' . $payloadJson);
@@ -371,6 +420,8 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 			  curl_close($curl);
 		  }
 	  }
+	  
+
 
 
 	  public function getCallbackUrl() {
@@ -497,114 +548,7 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 		  }
 	  }
 
-	  
-    public function validateResponse($returnParams) {
-
-		$writer = new \Zend_Log_Writer_Stream(BP . '/var/log/PinePG/'.date("Y-m-d").'.log');
-        $this->logger = new \Zend_Log();
-        $this->logger->addWriter($writer);
-		$this->logger->info(__LINE__ . ' | '.__FUNCTION__);
-		
-		$order_id=0;
-		if (isset($returnParams['ppc_UniqueMerchantTxnID'])) 
-		{
-		  $order_id = trim(($returnParams['ppc_UniqueMerchantTxnID']));
-		  $this->logger->info(__LINE__ . ' | '.__FUNCTION__.' validate response for order id:'.$order_id);
-		} 
-		else 
-		{
-		 $this->logger->info(__LINE__ . ' | '.__FUNCTION__.' Received order id is null');
-		  die('Illegal Access ORDER ID NOR PASSED');
-		}
-		
-		$objectManager = \Magento\Framework\App\ObjectManager::getInstance();
-        $order_info = $objectManager->create('Magento\Sales\Model\Order')->load($order_id);
-		
-	    if ($order_info) 
-		{
-			if ( !empty($returnParams) ) 
-			{
-				
-			$DiaSecretType='';
-			$DiaSecret='';
-			if (isset($returnParams['ppc_DIA_SECRET_TYPE'])) {
-				$DiaSecretType = $returnParams['ppc_DIA_SECRET_TYPE'];
-			} 
-			if (isset($returnParams['ppc_DIA_SECRET'])) {
-				$DiaSecret = $returnParams['ppc_DIA_SECRET'];
-			} 
-			
-			$strString="";
-			ksort($returnParams);
-			foreach ($returnParams as $key => $value)
-			{
-				$strString.=$key."=".$value."&";
-			}
-
-			$this->logger->info(__LINE__ . ' | '.__FUNCTION__.' [Order ID]:' . $order_id.' Received parameters : '.$strString);
-			unset($returnParams['ppc_DIA_SECRET_TYPE']);
-			unset($returnParams['ppc_DIA_SECRET']);
-			$strString="";
-			$secret_key   =   $this -> Hex2String($this->getConfigData("MerchantSecretKey"));
-			ksort($returnParams);
-			foreach ($returnParams as $key => $value)
-			{
-				$strString.=$key."=".$value."&";
-			}			
-			$strString = substr($strString, 0, -1);
-			$SecretHashCode = strtoupper(hash_hmac('sha256', $strString, $secret_key));
-		
-			if("" == trim($DiaSecret))
-			{	
-				$this->logger->info(__LINE__ . ' | '.__FUNCTION__.' [Order ID]:' . $order_id.' Transaction failed.Pine PG Secure hash is empty');
-				return false;
-			}   
-			else
-			{
-				if(trim($DiaSecret)==trim($SecretHashCode))
-				{	
-					if ($returnParams['ppc_PinePGTxnStatus'] == '4' && $returnParams['ppc_TxnResponseCode'] == '1') 
-					{		
-						$this->logger->info(__LINE__ . ' | '.__FUNCTION__.' [Order ID]:' . $order_id.' Payment Transation is successful');
-						return true;
-					}
-					else if($returnParams['ppc_PinePGTxnStatus'] == '-10')
-					{
-						$this->logger->info(__LINE__ . ' | '.__FUNCTION__.' [Order ID]:' . $order_id.' Transaction cancelled by user ');
-						return false;
-					}
-					else if($returnParams['ppc_PinePGTxnStatus'] == '-6')
-					{ 
-						$this->logger->info(__LINE__ . ' | '.__FUNCTION__.' [Order ID]:' . $order_id.' Transaction rejected by system ');
-						return false;
-					}
-					else
-					{
-						$this->logger->info(__LINE__ . ' | '.__FUNCTION__.' [Order ID]:' . $order_id.'  Transaction failed ');
-						return false;
-					}
-				}
-				else
-				{
-					$this->logger->info(__LINE__ . ' | '.__FUNCTION__.' [Order ID]:' . $order_id.'  Transaction failed.Secure_Hash not matched with Pine PG Secure Hash');
-					return false;
-				}
-			}
-		}
-		else
-		{ 	    
-				$this->logger->info(__LINE__ . ' | '.__FUNCTION__.' Post parameters received is empty');	
-				die('Illegal Access POST REQUEST IS EMPTY');
-				return false;
-		}
-		}
-		else 
-			{	
-			 $this->logger->info(__LINE__ . ' | '.__FUNCTION__.' Received order id is null:');
-			  die('Illegal Access ORDER ID NOR PASSED');
-			}	
-     return false;
-    }
+	
 
 
     public function postProcessing(\Magento\Sales\Model\Order $order, \Magento\Framework\DataObject $payment, $response) { 
