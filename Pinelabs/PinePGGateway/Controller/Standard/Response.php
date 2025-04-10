@@ -134,6 +134,21 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
 
             $this->logger->info('Order marked as successful. Entity ID: ' . $entityId);
 
+            //add sessions to show success page if session is lost
+
+            if ($order && $order->getId() && $order->getQuoteId() && $order->getIncrementId()) {
+                $this->checkoutSession->setLastQuoteId($order->getQuoteId());
+                $this->checkoutSession->setLastSuccessQuoteId($order->getQuoteId());
+                $this->checkoutSession->setLastOrderId($order->getId());
+                $this->checkoutSession->setLastRealOrderId($order->getIncrementId());
+                $this->checkoutSession->setLastOrderStatus($order->getStatus());
+            } else {
+                $this->logger->error('Missing order data: Cannot set checkout session values.');
+            }
+                
+
+            //add sessions to show success page if session is lost
+
             // Optionally send order confirmation email
             try {
                 $this->orderSender->send($order);
