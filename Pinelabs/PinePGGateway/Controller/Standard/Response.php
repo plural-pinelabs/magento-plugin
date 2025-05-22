@@ -79,15 +79,29 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
             $orderId = $callbackData['order_id'];
 
             $statusEnquiry = $callbackData['status'];
+            $maxRetries = 3;
+            $retryDelay = 15; // in seconds
             
-
-            if(!empty($orderId)){
-                $EnquiryApiResponse = $this->pinePGPaymentMethod->callEnquiryApi($orderId);
-                $statusEnquiry = $EnquiryApiResponse['data']['status'] ?? null;
+            if (!empty($orderId)) {
+                for ($i = 0; $i < $maxRetries; $i++) {
+                    $EnquiryApiResponse = $this->pinePGPaymentMethod->callEnquiryApi($orderId);
+                    $statusEnquiry = $EnquiryApiResponse['data']['status'] ?? null;
+            
+                    $this->logger->info("Retry #$i - Status from Enquiry API for order_id $orderId: $statusEnquiry");
+            
+                    if ($statusEnquiry === 'PROCESSED') {
+                        break;
+                    }
+            
+                    // Delay before next attempt
+                    if ($i < $maxRetries - 1) {
+                        sleep($retryDelay); // Wait 15 seconds
+                    }
+                }
             }
-
-            if ( $statusEnquiry!='PROCESSED') {
-                $this->logger->err('Order is not process: ' . $orderId);
+            
+            if ($statusEnquiry !== 'PROCESSED') {
+                $this->logger->err("Order is not processed after $maxRetries retries: " . $orderId);
                 $resultRedirect->setPath('checkout/onepage/failure');
                 return $resultRedirect;
             }
