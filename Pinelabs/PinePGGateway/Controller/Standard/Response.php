@@ -80,7 +80,7 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
 
             $statusEnquiry = $callbackData['status'];
             $maxRetries = 3;
-            $retryDelay = 15; // in seconds
+            $retryDelay = 20; // in seconds
             
             if (!empty($orderId)) {
                 for ($i = 0; $i < $maxRetries; $i++) {
