@@ -15,7 +15,7 @@ class Redirect extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract {
 			}
 		
 			$order = $this->getOrder();
-			$order->setState('processing')->setStatus('pending');
+			$order->setState('pending')->setStatus('pending');
 			$order->save();
 			$quote = $this->getQuote();
 			$email = $this->getRequest()->getParam('email');
