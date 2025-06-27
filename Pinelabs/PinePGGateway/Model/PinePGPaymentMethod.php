@@ -106,9 +106,7 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 
     public function buildCheckoutRequest() {
 
-		$writer = new \Zend_Log_Writer_Stream(BP . '/var/log/PinePG/'.date("Y-m-d").'.log');
-        $this->logger = new \Zend_Log();
-        $this->logger->addWriter($writer);
+		$this->logger = \Pinelabs\PinePGGateway\Helper\Logger::getLogger();
 
 		$TXN_TYPE_PURCHASE='1';
 		$NAVIGATION_REDIRECT_MODE='2';
@@ -231,9 +229,7 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 
 	  public function callOrderApi($order)
 	  {
-		  $writer = new \Zend_Log_Writer_Stream(BP . '/var/log/PinePG/' . date("Y-m-d") . '.log');
-		  $this->logger = new \Zend_Log();
-		  $this->logger->addWriter($writer);
+		  $this->logger = \Pinelabs\PinePGGateway\Helper\Logger::getLogger();
 
 		  $this->logger->info(__LINE__ . ' | ' . __FUNCTION__ . ' Complete Order Data: ' . json_encode($order->getData(), JSON_PRETTY_PRINT));
 
@@ -441,9 +437,7 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 
 	public function callEnquiryApi($orderId) {
 
-		$writer = new \Zend_Log_Writer_Stream(BP . '/var/log/PinePG/'.date("Y-m-d").'.log');
-        $this->logger = new \Zend_Log();
-        $this->logger->addWriter($writer);
+		$this->logger = \Pinelabs\PinePGGateway\Helper\Logger::getLogger();
 
 		$authorization = $this->getAccessToken();
 		$env = $this->getConfigData('PayEnvironment');
@@ -553,10 +547,7 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 
     public function postProcessing(\Magento\Sales\Model\Order $order, \Magento\Framework\DataObject $payment, $response) { 
 
-		$writer = new \Zend_Log_Writer_Stream(BP . '/var/log/PinePG/'.date("Y-m-d").'.log');
-        $this->logger = new \Zend_Log();
-        $this->logger->addWriter($writer);
-		$this->logger->info(__LINE__ . ' | '.__FUNCTION__);
+		$this->logger = \Pinelabs\PinePGGateway\Helper\Logger::getLogger();
  
 		$payment->setTransactionId($response['order_id']);
         
@@ -604,9 +595,7 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 
 	private function calculation_on_items($items,$total_amt,$discount){ 
 
-		$writer = new \Zend_Log_Writer_Stream(BP . '/var/log/PinePG/'.date("Y-m-d").'.log');
-        $this->logger = new \Zend_Log();
-        $this->logger->addWriter($writer);
+		$this->logger = \Pinelabs\PinePGGateway\Helper\Logger::getLogger();
 
 		$this->logger->info('PineItems - '.json_encode($items).' Ordertotal-amount-before-discount - '.$total_amt. ' Discount - '. $discount);
 

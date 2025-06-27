@@ -56,9 +56,7 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
 
     public function execute()
     {
-        $writer = new \Zend_Log_Writer_Stream(BP . '/var/log/PinePG/' . date("Y-m-d") . '.log');
-        $this->logger = new \Zend_Log();
-        $this->logger->addWriter($writer);
+        $this->logger = \Pinelabs\PinePGGateway\Helper\Logger::getLogger();
         $resultRedirect = $this->resultRedirectFactory->create();
 
         try {
