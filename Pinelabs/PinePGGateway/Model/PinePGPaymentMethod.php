@@ -384,7 +384,7 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 		  ];
 	  
 		  $curl = curl_init();
-		  curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);
+		  curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, true);
 		  curl_setopt_array($curl, [
 			  CURLOPT_URL => $url,
 			  CURLOPT_RETURNTRANSFER => true,
@@ -511,7 +511,7 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 	  
 		  // Initialize cURL
 		  $curl = curl_init();
-		  curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);
+		  curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, true);
 		  curl_setopt_array($curl, [
 			  CURLOPT_URL => $url,
 			  CURLOPT_RETURNTRANSFER => true, // Return response as string
