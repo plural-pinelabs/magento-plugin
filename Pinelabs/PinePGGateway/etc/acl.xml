@@ -4,7 +4,6 @@
         <resources>
             <resource id="Magento_Backend::admin">
                 <resource id="Pinelabs_PinePGGateway::main" title="PinePG Gateway" sortOrder="10">
-                    <resource id="Pinelabs_PinePGGateway::refund" title="PinePG Refund" sortOrder="10" />
                 </resource>
             </resource>
         </resources>
