@@ -5,6 +5,8 @@ namespace Pinelabs\PinePGGateway\Model;
 use Magento\Sales\Api\Data\TransactionInterface;
 use Magento\Framework\Session\Config;
 use Magento\Sales\Api\OrderRepositoryInterface;
+use Psr\Log\LoggerInterface;
+
 /**
  * Pay In Store payment method model
  */
@@ -44,15 +46,18 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
         \Magento\Framework\Api\AttributeValueFactory $customAttributeFactory,
         \Magento\Payment\Helper\Data $paymentData,
         \Magento\Framework\App\Config\ScopeConfigInterface $scopeConfig,
-        \Magento\Payment\Model\Method\Logger $logger,
         \Pinelabs\PinePGGateway\Helper\PinePG $helper,
-       
         \Magento\Framework\HTTP\ZendClientFactory $httpClientFactory,
-        \Magento\Checkout\Model\Session $checkoutSession   ,
+        \Magento\Checkout\Model\Session $checkoutSession,
         \Magento\Checkout\Model\Cart $cart,
 		\Magento\Directory\Model\Country $countryHelper,
-		OrderRepositoryInterface $orderRepository 
+		OrderRepositoryInterface $orderRepository,
+		LoggerInterface $logger,
+		\Magento\Payment\Model\Method\Logger $paymentLogger
+
+		
     ) {
+		$this->logger = $logger;
         $this->helper = $helper;
         $this->httpClientFactory = $httpClientFactory;
         $this->checkoutSession = $checkoutSession;
@@ -67,7 +72,7 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
             $customAttributeFactory,
             $paymentData,
             $scopeConfig,
-            $logger
+			$paymentLogger
         );
 
     }
@@ -106,7 +111,7 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 
     public function buildCheckoutRequest() {
 
-		$this->logger = \Pinelabs\PinePGGateway\Helper\Logger::getLogger();
+		
 
 		$TXN_TYPE_PURCHASE='1';
 		$NAVIGATION_REDIRECT_MODE='2';
@@ -229,9 +234,9 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 
 	  public function callOrderApi($order)
 	  {
-		  $this->logger = \Pinelabs\PinePGGateway\Helper\Logger::getLogger();
+		 
 
-		  $this->logger->info(__LINE__ . ' | ' . __FUNCTION__ . ' Complete Order Data: ' . json_encode($order->getData(), JSON_PRETTY_PRINT));
+		  $this->_logger->info(__LINE__ . ' | ' . __FUNCTION__ . ' Complete Order Data: ' . json_encode($order->getData(), JSON_PRETTY_PRINT));
 
 	  
 		  $env = $this->getConfigData('PayEnvironment');
@@ -286,7 +291,7 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 				break;
 			}
 
-			$this->logger->info('Item: ' . $item->getName() . ', SKU: ' . $item->getSku() . ', invalid_sku_found: ' . $invalid_sku_found);
+			$this->_logger->info('Item: ' . $item->getName() . ', SKU: ' . $item->getSku() . ', invalid_sku_found: ' . $invalid_sku_found);
 
 
 			  for ($j = 0; $j < $quantity; $j++) {
@@ -325,7 +330,7 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 				$products = []; // make sure it's reset after the loop
 			}
 	  
-		  $this->logger->info(__LINE__ . ' | ' . __FUNCTION__ . ' V3 Create order API started with order id: ' . $order->getIncrementId());
+		  $this->_logger->info(__LINE__ . ' | ' . __FUNCTION__ . ' V3 Create order API started with order id: ' . $order->getIncrementId());
 	  
 
 		   // Prepare purchase details
@@ -375,7 +380,7 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 		 
 	  
 		  $payloadJson = json_encode($payload, JSON_PRETTY_PRINT);
-		  $this->logger->info(__LINE__ . ' | ' . __FUNCTION__ . ' Request Payload: ' . $payloadJson);
+		  $this->_logger->info(__LINE__ . ' | ' . __FUNCTION__ . ' Request Payload: ' . $payloadJson);
 	  
 		  $headers = [
 			  'Content-Type: application/json',
@@ -396,7 +401,7 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 		  try {
 			  $response = curl_exec($curl);
 			  if ($response === false) {
-				  $this->logger->info(__LINE__ . ' | ' . __FUNCTION__ . ' Create order API for V3 failed at cURL level, response: ' . curl_error($curl));
+				  $this->_logger->info(__LINE__ . ' | ' . __FUNCTION__ . ' Create order API for V3 failed at cURL level, response: ' . curl_error($curl));
 				  throw new \Exception('cURL Error: ' . curl_error($curl));
 			  }
 	  
@@ -407,7 +412,7 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 				  $this->orderRepository->save($order);
 				  return $response['redirect_url'];
 			  } else {
-				  $this->logger->info(__LINE__ . ' | ' . __FUNCTION__ . ' Create order API for V3 failed at response level, response: ' . json_encode($response));
+				  $this->_logger->info(__LINE__ . ' | ' . __FUNCTION__ . ' Create order API for V3 failed at response level, response: ' . json_encode($response));
 				  throw new \Exception($response['response_message'] ?? 'Unknown error');
 			  }
 		  } catch (\Exception $e) {
@@ -437,7 +442,7 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 
 	public function callEnquiryApi($orderId) {
 
-		$this->logger = \Pinelabs\PinePGGateway\Helper\Logger::getLogger();
+		
 
 		$authorization = $this->getAccessToken();
 		$env = $this->getConfigData('PayEnvironment');
@@ -467,11 +472,11 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 			$response = curl_exec($curl);
 	
 			if ($response === false) {
-				$this->logger->info(__LINE__ . ' | '.__FUNCTION__.' Enquiry API Response for V3: '.  curl_error($curl));
+				$this->_logger->info(__LINE__ . ' | '.__FUNCTION__.' Enquiry API Response for V3: '.  curl_error($curl));
 				throw new \Exception('cURL Error: ' . curl_error($curl));
 			}
 
-			$this->logger->info(__LINE__ . ' | '.__FUNCTION__.' Enquiry API Response for V3: '. $response);
+			$this->_logger->info(__LINE__ . ' | '.__FUNCTION__.' Enquiry API Response for V3: '. $response);
 	
 			// Decode the JSON response
 			$response = json_decode($response, true);
@@ -547,7 +552,7 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 
     public function postProcessing(\Magento\Sales\Model\Order $order, \Magento\Framework\DataObject $payment, $response) { 
 
-		$this->logger = \Pinelabs\PinePGGateway\Helper\Logger::getLogger();
+		
  
 		$payment->setTransactionId($response['order_id']);
         
@@ -561,7 +566,7 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 		// Add a comment to the order
 		$order->addStatusHistoryComment('Payment successfull for order <b>Pinelabs Payment Id: </b>'.$response['order_id']. ', <b>Txn Status:</b> '. $response['status']);
         $order->save();
-		$this->logger->info(__LINE__ . ' | '.__FUNCTION__.' Save the order after successful response from Pine PG for order id:'.$response['order_id'].'and Pine PG Txn ID:'.$response['order_id'] );
+		$this->_logger->info(__LINE__ . ' | '.__FUNCTION__.' Save the order after successful response from Pine PG for order id:'.$response['order_id'].'and Pine PG Txn ID:'.$response['order_id'] );
     }
 
 	private function checkCartType($product_info_data,$params,$order)
@@ -595,7 +600,7 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 
 	private function calculation_on_items($items,$total_amt,$discount){ 
 
-		$this->logger = \Pinelabs\PinePGGateway\Helper\Logger::getLogger();
+		
 
 		$this->logger->info('PineItems - '.json_encode($items).' Ordertotal-amount-before-discount - '.$total_amt. ' Discount - '. $discount);
 

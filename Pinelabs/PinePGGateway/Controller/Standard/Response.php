@@ -56,7 +56,6 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
 
     public function execute()
     {
-        $this->logger = \Pinelabs\PinePGGateway\Helper\Logger::getLogger();
         $resultRedirect = $this->resultRedirectFactory->create();
 
         try {
@@ -64,10 +63,10 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
 
 
             // Log the callback data for debugging
-            $this->logger->info('PinePG callback data: ' . json_encode($callbackData));
+            $this->_logger->info('PinePG callback data: ' . json_encode($callbackData));
 
             if (!isset($callbackData['order_id'])) {
-                $this->logger->err('No order_id received in callback data.'. json_encode($callbackData));
+                $this->_logger->error('No order_id received in callback data.'. json_encode($callbackData));
                 $resultRedirect->setPath('checkout/onepage/failure');
                 return $resultRedirect;
             }
@@ -85,7 +84,7 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
                     $EnquiryApiResponse = $this->pinePGPaymentMethod->callEnquiryApi($orderId);
                     $statusEnquiry = $EnquiryApiResponse['data']['status'] ?? null;
             
-                    $this->logger->info("Retry #$i - Status from Enquiry API for order_id $orderId: $statusEnquiry");
+                    $this->_logger->info("Retry #$i - Status from Enquiry API for order_id $orderId: $statusEnquiry");
             
                     if ($statusEnquiry === 'PROCESSED') {
                         break;
@@ -99,7 +98,7 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
             }
             
             if ($statusEnquiry !== 'PROCESSED') {
-                $this->logger->err("Order is not processed after $maxRetries retries: " . $orderId);
+                $this->_logger->error("Order is not processed after $maxRetries retries: " . $orderId);
                 $resultRedirect->setPath('checkout/onepage/failure');
                 return $resultRedirect;
             }
@@ -116,16 +115,16 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
            
 
             if (!$entityId) {
-                $this->logger->err('No matching order found for order_id: ' . $orderId);
+                $this->_logger->error('No matching order found for order_id: ' . $orderId);
                 $resultRedirect->setPath('checkout/onepage/failure');
                 return $resultRedirect;
             }
 
             
-           // $order = $this->orderFactory->create()->load($entityId);
+          
 
             if (!$order->getId()) {
-                $this->logger->err('Failed to load order with entity_id: ' . $entityId);
+                $this->_logger->error('Failed to load order with entity_id: ' . $entityId);
                 $resultRedirect->setPath('checkout/onepage/failure');
                 return $resultRedirect;
             }
@@ -141,10 +140,10 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
 
             $paymentMethod->postProcessing($order, $payment, $callbackData);
 
-            $this->logger->info('Checkout Session Order ID: ' . $this->checkoutSession->getLastOrderId());
+            $this->_logger->info('Checkout Session Order ID: ' . $this->checkoutSession->getLastOrderId());
 
 
-            $this->logger->info('Order marked as successful. Entity ID: ' . $entityId);
+            $this->_logger->info('Order marked as successful. Entity ID: ' . $entityId);
 
             //add sessions to show success page if session is lost
 
@@ -155,7 +154,7 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
                 $this->checkoutSession->setLastRealOrderId($order->getIncrementId());
                 $this->checkoutSession->setLastOrderStatus($order->getStatus());
             } else {
-                $this->logger->error('Missing order data: Cannot set checkout session values.');
+                $this->_logger->error('Missing order data: Cannot set checkout session values.');
             }
                 
 
@@ -165,17 +164,17 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
             try {
                 $this->orderSender->send($order);
             } catch (\Exception $e) {
-                $this->logger->critical('Error sending order email: ' . $e->getMessage());
+                $this->_logger->critical('Error sending order email: ' . $e->getMessage());
             }
 
             $resultRedirect->setPath('checkout/onepage/success');
         } catch (\Magento\Framework\Exception\LocalizedException $e) {
             $this->messageManager->addExceptionMessage($e, $e->getMessage());
-            $this->logger->err('LocalizedException: ' . $e->getMessage());
+            $this->_logger->error('LocalizedException: ' . $e->getMessage());
             $resultRedirect->setPath('checkout/onepage/failure');
         } catch (\Exception $e) {
             $this->messageManager->addExceptionMessage($e, __('We can\'t place the order.'));
-            $this->logger->err('Exception: ' . $e->getMessage());
+            $this->_logger->error('Exception: ' . $e->getMessage());
             $resultRedirect->setPath('checkout/onepage/failure');
         }
 
