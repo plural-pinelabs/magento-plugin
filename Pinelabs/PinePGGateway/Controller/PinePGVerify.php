@@ -7,9 +7,7 @@ class PinePGVerify
 
     public static function verify($params,$PayEnvironment)
     { 
-        $writer = new \Zend_Log_Writer_Stream(BP . '/var/log/PinePG/' . date("Y-m-d") . '.log');
-        $logger = new \Zend_Log();
-        $logger->addWriter($writer);
+        $logger = \Pinelabs\PinePGGateway\Helper\Logger::getLogger();
 
         $curl = curl_init();
 

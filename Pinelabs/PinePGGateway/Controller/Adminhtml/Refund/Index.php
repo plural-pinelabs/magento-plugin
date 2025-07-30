@@ -48,11 +48,7 @@ class Index extends Action
         $this->logger = $logger;
         $this->pinePGHelper = $pinePGHelper;
 
-        // Initialize custom logger
-        $logPath = BP . '/var/log/PinePG/' . date("Y-m-d") . '.log';
-        $writer = new \Zend_Log_Writer_Stream($logPath);
-        $this->logger = new \Zend_Log();
-        $this->logger->addWriter($writer);
+        $this->logger = \Pinelabs\PinePGGateway\Helper\Logger::getLogger();
     }
 
     /**
