@@ -29,7 +29,7 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
         \Magento\Checkout\Model\Session $checkoutSession,
         \Magento\Quote\Api\CartRepositoryInterface $quoteRepository,
         \Magento\Sales\Model\OrderFactory $orderFactory,
-        \Psr\Log\LoggerInterface $logger,
+        \Pinelabs\PinePGGateway\Logger\Logger $logger,
         \Pinelabs\PinePGGateway\Model\PinePGPaymentMethod $paymentMethod,
         \Pinelabs\PinePGGateway\Helper\PinePG $checkoutHelper,
         \Pinelabs\PinePGGateway\Model\ConfigProvider $config,

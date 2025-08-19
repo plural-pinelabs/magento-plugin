@@ -8,6 +8,7 @@ use Magento\Framework\App\Helper\AbstractHelper;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Sales\Model\Order\Payment\Transaction;
 use Magento\Sales\Model\Order\Payment\Transaction\BuilderInterface;
+use Pinelabs\PinePGGateway\Logger\Logger;
 
 
 
@@ -20,6 +21,8 @@ class PinePG extends AbstractHelper
 
     protected $orderRepository;
     protected $scopeConfig;
+
+     protected $logger;
  
 
     public function __construct(
@@ -29,7 +32,8 @@ class PinePG extends AbstractHelper
         \Magento\Quote\Model\QuoteManagement $quoteManagement,
         \Magento\Sales\Api\OrderRepositoryInterface $orderRepository,
         ScopeConfigInterface $scopeConfig,
-        BuilderInterface $transactionBuilder
+        BuilderInterface $transactionBuilder,
+        \Pinelabs\PinePGGateway\Logger\Logger $logger
     ) {
         $this->session = $session;
         $this->quote = $quote;
@@ -37,10 +41,14 @@ class PinePG extends AbstractHelper
         $this->orderRepository = $orderRepository;
         $this->scopeConfig = $scopeConfig;
         $this->transactionBuilder = $transactionBuilder;
+        $this->logger = $logger;
         parent::__construct($context);
 
         
     }
+
+
+   
 
     public function cancelCurrentOrder($comment)
     {

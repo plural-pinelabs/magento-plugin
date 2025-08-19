@@ -5,7 +5,7 @@ namespace Pinelabs\PinePGGateway\Model;
 use Magento\Sales\Api\Data\TransactionInterface;
 use Magento\Framework\Session\Config;
 use Magento\Sales\Api\OrderRepositoryInterface;
-use Psr\Log\LoggerInterface;
+use Pinelabs\PinePGGateway\Logger\Logger;
 
 /**
  * Pay In Store payment method model
@@ -23,6 +23,7 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
     protected $_isOffline = true;
 	private $checkoutSession;
 	protected  $logger;
+	protected  $pineLogger;
 	private $orderRepository;
 
     /**
@@ -52,12 +53,12 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
         \Magento\Checkout\Model\Cart $cart,
 		\Magento\Directory\Model\Country $countryHelper,
 		OrderRepositoryInterface $orderRepository,
-		LoggerInterface $logger,
+		 Logger $pineLogger,
 		\Magento\Payment\Model\Method\Logger $paymentLogger
 
 		
     ) {
-		$this->logger = $logger;
+		$this->pineLogger  = $pineLogger;
         $this->helper = $helper;
         $this->httpClientFactory = $httpClientFactory;
         $this->checkoutSession = $checkoutSession;
@@ -232,195 +233,197 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 	 
 	  //validate response
 
-	  public function callOrderApi($order)
-	  {
-		 
+	public function callOrderApi($order)
+{
+    $this->pineLogger->info(__LINE__ . ' | ' . __FUNCTION__ . ' Complete Order Data: ' . json_encode($order->getData(), JSON_PRETTY_PRINT));
 
-		  $this->_logger->info(__LINE__ . ' | ' . __FUNCTION__ . ' Complete Order Data: ' . json_encode($order->getData(), JSON_PRETTY_PRINT));
+    $env = $this->getConfigData('PayEnvironment');
+    $url = ($env === 'LIVE')
+        ? 'https://api.pluralpay.in/api/checkout/v1/orders'
+        : 'https://pluraluat.v2.pinepg.in/api/checkout/v1/orders';
 
-	  
-		  $env = $this->getConfigData('PayEnvironment');
-		  $url = ($env === 'LIVE') 
-			  ? 'https://api.pluralpay.in/api/checkout/v1/orders'
-			  : 'https://pluraluat.v2.pinepg.in/api/checkout/v1/orders';
-	  
-		  $callback_url = $this->getCallbackUrl();
-		  $telephone = $order->getBillingAddress()->getTelephone();
-		  $onlyNumbers = preg_replace('/\D/', '', $telephone);
-		  if (empty($onlyNumbers)) {
-			  $onlyNumbers = '9999999999'; // Default value if empty
-		  }
-	  
-		  // Retrieve Billing and Shipping Addresses
-		  $billingAddress = $order->getBillingAddress();
-		  $shippingAddress = $order->getShippingAddress();
-	  
-		  // Fallback: Use Shipping Address if Billing Address is missing
-		  $billingAddressData = $billingAddress ?: $shippingAddress;
-	  
-		  // Helper function to format addresses
-		  $formatAddress = function ($address) {
-			  return [
-				  'address1' => substr($address->getStreetLine(1), 0, 99),
-				  'pincode'  => $address->getPostcode(),
-				  'city'     => $address->getCity(),
-				  'state'    => $address->getRegion(),
-				  'country'  => $address->getCountryId()
-			  ];
-		  };
-	  
-		  $billingData = $formatAddress($billingAddressData);
-		  $shippingData = $formatAddress($shippingAddress);
-	  
-		  // Get ordered products and replicate as per quantity
-		  $invalid_sku_found = false;
-		  $products = [];
-		  $totalProductPrice=0;
-		  foreach ($order->getAllVisibleItems() as $item) {
-			  $product = $item->getProduct();
-			  $productPrice = intval(floatval($item->getBasePrice()) * 100);
-			  $productDiscount = intval(floatval($item->getDiscountAmount()) * 100);
-			  $quantity = intval(explode('.', $item->getQtyOrdered())[0]);
-			  $sku = $item->getSku();
+    $callback_url = $this->getCallbackUrl();
+    $telephone = $order->getBillingAddress()->getTelephone();
+    $onlyNumbers = preg_replace('/\D/', '', $telephone) ?: '9999999999';
 
-			 
+    $billingAddress = $order->getBillingAddress();
+    $shippingAddress = $order->getShippingAddress();
+    $billingAddressData = $billingAddress ?: $shippingAddress;
 
-			  // If SKU is null or empty string, stop processing and clear $products
-			  if (empty($sku)) {
-				$invalid_sku_found = true;
-				break;
-			}
+    $formatAddress = function ($address) {
+        return [
+            'address1' => substr($address->getStreetLine(1), 0, 99),
+            'pincode'  => $address->getPostcode(),
+            'city'     => $address->getCity(),
+            'state'    => $address->getRegion(),
+            'country'  => $address->getCountryId()
+        ];
+    };
 
-			$this->_logger->info('Item: ' . $item->getName() . ', SKU: ' . $item->getSku() . ', invalid_sku_found: ' . $invalid_sku_found);
+    $billingData = $formatAddress($billingAddressData);
+    $shippingData = $formatAddress($shippingAddress);
+
+    $grandTotal = intval(round(floatval($order->getBaseGrandTotal()) * 100));
+    $shippingAmount = intval(round(floatval($order->getBaseShippingInclTax()) * 100));
+    $totalDiscountAmount = abs(intval(round(floatval($order->getBaseDiscountAmount()) * 100)));
+
+    $products = [];
+    $totalProductValue = 0;
+
+    // Calculate total price incl. tax for all items (for proportional discount)
+    $couponDiscount = abs(floatval($order->getBaseDiscountAmount()));
+    $totalItemTaxIncl = 0.0;
+
+    foreach ($order->getAllVisibleItems() as $item) {
+        $qty = intval($item->getQtyOrdered());
+        $priceInclTax = floatval($item->getBasePriceInclTax());
+        $totalItemTaxIncl += ($priceInclTax * $qty);
+    }
+
+    foreach ($order->getAllVisibleItems() as $item) {
+        $qty = intval($item->getQtyOrdered());
+        if ($qty <= 0) continue;
+
+        $priceInclTax = floatval($item->getBasePriceInclTax());
+        $itemDiscount = abs(floatval($item->getBaseDiscountAmount()));
+        $sku = $item->getSku() ?: 'ITEM_' . $item->getItemId() . '_' . rand(10000, 99999);
+
+        $itemTotal = $priceInclTax * $qty;
+
+        $cartDiscountShare = $totalItemTaxIncl > 0
+            ? ($itemTotal / $totalItemTaxIncl) * $couponDiscount
+            : 0;
+
+        $totalDiscount = $itemDiscount + $cartDiscountShare;
+        $finalItemPrice = ($itemTotal - $totalDiscount) / $qty;
+        $finalItemPrice = max(0, $finalItemPrice);
+
+        $finalItemPricePaise = intval(round($finalItemPrice * 100));
+
+        if ($finalItemPricePaise <= 0) {
+            $this->pineLogger->info("Skipping product with 0 price after discount: {$item->getName()} (SKU: $sku)");
+            continue;
+        }
+
+        $this->pineLogger->info("Item: {$item->getName()}, SKU: $sku, PriceInclTax: $priceInclTax, Qty: $qty, ItemDiscount: $itemDiscount, CartDiscountShare: $cartDiscountShare, FinalPrice: $finalItemPricePaise");
+
+        for ($i = 0; $i < $qty; $i++) {
+            $products[] = [
+                'product_code' => $sku,
+                'product_amount' => [
+                    'value' => $finalItemPricePaise,
+                    'currency' => 'INR',
+                ],
+            ];
+            $totalProductValue += $finalItemPricePaise;
+        }
+    }
+
+    // Add shipping as a product
+    if ($shippingAmount > 0) {
+        $products[] = [
+            'product_code' => 'shipping_charge',
+            'product_amount' => [
+                'value' => $shippingAmount,
+                'currency' => 'INR',
+            ],
+        ];
+        $this->pineLogger->info("Shipping added: ₹" . ($shippingAmount / 100));
+        $totalProductValue += $shippingAmount;
+    }
+
+    // Rounding adjustment if needed
+    $roundingAdjustment = $grandTotal - $totalProductValue;
+    if ($roundingAdjustment > 0) {
+        $products[] = [
+            'product_code' => 'rounding_adjustment',
+            'product_amount' => [
+                'value' => $roundingAdjustment,
+                'currency' => 'INR',
+            ],
+        ];
+        $this->pineLogger->info("Adding rounding adjustment: ₹" . ($roundingAdjustment / 100));
+        $totalProductValue += $roundingAdjustment;
+    }
+
+    // Final validation
+    if (abs($grandTotal - $totalProductValue) > 1) {
+        $this->pineLogger->error("Amount mismatch! GrandTotal: $grandTotal, Calculated: $totalProductValue");
+        throw new \Exception("Amount calculation error - totals don't match");
+    }
+
+    // Final Payload
+    $payload = [
+        'merchant_order_reference' => $order->getIncrementId() . '_' . date("ymdHis"),
+        'order_amount' => [
+            'value' => $grandTotal,
+            'currency' => 'INR',
+        ],
+        'callback_url' => $callback_url,
+        'pre_auth' => false,
+        'integration_mode' => "REDIRECT",
+        "plugin_data" => [
+            "plugin_type" => "Magento",
+            "plugin_version" => "V3"
+        ],
+        'purchase_details' => [
+            'customer' => [
+                'email_id' => $billingAddressData->getEmail(),
+                'first_name' => $billingAddressData->getFirstname(),
+                'last_name' => $billingAddressData->getLastname(),
+                'mobile_number' => $onlyNumbers,
+                'billing_address' => $billingData,
+                'shipping_address' => $shippingData,
+            ],
+            'products' => $products,
+        ],
+    ];
+
+    $payloadJson = json_encode($payload, JSON_PRETTY_PRINT);
+    $this->pineLogger->info(__LINE__ . ' | ' . __FUNCTION__ . ' Request Payload: ' . $payloadJson);
+
+    // Make API call
+    $headers = [
+        'Content-Type: application/json',
+        'Merchant-ID: ' . $this->getConfigData("MerchantId"),
+        'Authorization: Bearer ' . $this->getAccessToken(),
+    ];
+
+    $curl = curl_init();
+    curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, true);
+    curl_setopt_array($curl, [
+        CURLOPT_URL => $url,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => $payloadJson,
+    ]);
+
+    try {
+        $response = curl_exec($curl);
+        if ($response === false) {
+            $this->pineLogger->info(__LINE__ . ' | ' . __FUNCTION__ . ' API call failed: ' . curl_error($curl));
+            throw new \Exception('cURL Error: ' . curl_error($curl));
+        }
+
+        $response = json_decode($response, true);
+        if (isset($response['redirect_url']) && $response['response_code'] === 200) {
+            $order->setData('plural_order_id', $response['order_id']);
+            $this->orderRepository->save($order);
+            return $response['redirect_url'];
+        } else {
+            $this->pineLogger->info(__LINE__ . ' | ' . __FUNCTION__ . ' API failure: ' . json_encode($response));
+            throw new \Exception($response['error_message'] ?? ($response['response_message'] ?? 'Unknown error'));
+        }
+    } catch (\Exception $e) {
+        throw new \Exception('API Request Error: ' . $e->getMessage());
+    } finally {
+        curl_close($curl);
+    }
+}
 
 
-			  for ($j = 0; $j < $quantity; $j++) {
-				$totalProductPrice=$totalProductPrice+$productPrice;
-				  $productData = [
-					  'product_code' => $sku,
-					  'product_amount' => [
-						  'value' => $productPrice,
-						  'currency' => 'INR',
-					  ],
-				  ];
-				  $products[] = $productData;
-			  }
-		  }
 
-
-		 
-
-		  $baseAmount=intval(floatval($order->getBaseGrandTotal()) * 100);
-
-		  if($baseAmount>$totalProductPrice){
-                $additional_amount=$baseAmount-$totalProductPrice;
-				$productData = [
-					'product_code' => 'additional_charges',
-					'product_amount' => [
-						'value' => $additional_amount,
-						'currency' => 'INR',
-					],
-				];
-
-				$products[] = $productData;
-			}
-		 
-
-			if ($invalid_sku_found) {
-				$products = []; // make sure it's reset after the loop
-			}
-	  
-		  $this->_logger->info(__LINE__ . ' | ' . __FUNCTION__ . ' V3 Create order API started with order id: ' . $order->getIncrementId());
-	  
-
-		   // Prepare purchase details
-		   $purchase_details = [
-			'customer' => [
-				'email_id' => $billingAddressData->getEmail(),
-				'first_name' => $billingAddressData->getFirstname(),
-				'last_name' => $billingAddressData->getLastname(),
-				'mobile_number' => $onlyNumbers,
-				'billing_address' => $billingData,
-				'shipping_address' => $shippingData,
-			]
-		];
-
-		if (!empty($products)) {
-			$purchase_details['products'] = $products;
-		}
-		  
-		 
-		  // Construct payload
-		  $payload = [
-			  'merchant_order_reference' => $order->getIncrementId() . '_' . date("ymdHis"),
-			  'order_amount' => [
-				  'value' => intval(floatval($order->getBaseGrandTotal()) * 100),
-				  'currency' => 'INR',
-			  ],
-			  'callback_url' => $callback_url,
-			  'pre_auth' => false,
-			  'integration_mode'=> "REDIRECT",
-			  "plugin_data"=> [
-					"plugin_type" => "Magento",
-					"plugin_version" => "V3"
-			  ],
-			  'purchase_details' =>$purchase_details,
-		  ];
-
-		 
-
-
-		  if ($productDiscount > 0) {
-			$payload['cart_coupon_discount_amount'] = [
-				'value' => $productDiscount,
-				'currency' => 'INR',
-			];
-		}
-	  
-		 
-	  
-		  $payloadJson = json_encode($payload, JSON_PRETTY_PRINT);
-		  $this->_logger->info(__LINE__ . ' | ' . __FUNCTION__ . ' Request Payload: ' . $payloadJson);
-	  
-		  $headers = [
-			  'Content-Type: application/json',
-			  'Merchant-ID: ' . $this->getConfigData("MerchantId"),
-			  'Authorization: Bearer ' . $this->getAccessToken(),
-		  ];
-	  
-		  $curl = curl_init();
-		  curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, true);
-		  curl_setopt_array($curl, [
-			  CURLOPT_URL => $url,
-			  CURLOPT_RETURNTRANSFER => true,
-			  CURLOPT_HTTPHEADER => $headers,
-			  CURLOPT_POST => true,
-			  CURLOPT_POSTFIELDS => $payloadJson,
-		  ]);
-	  
-		  try {
-			  $response = curl_exec($curl);
-			  if ($response === false) {
-				  $this->_logger->info(__LINE__ . ' | ' . __FUNCTION__ . ' Create order API for V3 failed at cURL level, response: ' . curl_error($curl));
-				  throw new \Exception('cURL Error: ' . curl_error($curl));
-			  }
-	  
-			  $response = json_decode($response, true);
-	  
-			  if (isset($response['redirect_url']) && $response['response_code'] === 200) {
-				  $order->setData('plural_order_id', $response['order_id']);
-				  $this->orderRepository->save($order);
-				  return $response['redirect_url'];
-			  } else {
-				  $this->_logger->info(__LINE__ . ' | ' . __FUNCTION__ . ' Create order API for V3 failed at response level, response: ' . json_encode($response));
-				  throw new \Exception($response['response_message'] ?? 'Unknown error');
-			  }
-		  } catch (\Exception $e) {
-			  throw new \Exception('Error during API request: ' . $e->getMessage());
-		  } finally {
-			  curl_close($curl);
-		  }
-	  }
 	  
 
 
@@ -472,11 +475,11 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 			$response = curl_exec($curl);
 	
 			if ($response === false) {
-				$this->_logger->info(__LINE__ . ' | '.__FUNCTION__.' Enquiry API Response for V3: '.  curl_error($curl));
+				$this->pineLogger->info(__LINE__ . ' | '.__FUNCTION__.' Enquiry API Response for V3: '.  curl_error($curl));
 				throw new \Exception('cURL Error: ' . curl_error($curl));
 			}
 
-			$this->_logger->info(__LINE__ . ' | '.__FUNCTION__.' Enquiry API Response for V3: '. $response);
+			$this->pineLogger->info(__LINE__ . ' | '.__FUNCTION__.' Enquiry API Response for V3: '. $response);
 	
 			// Decode the JSON response
 			$response = json_decode($response, true);
@@ -566,7 +569,7 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 		// Add a comment to the order
 		$order->addStatusHistoryComment('Payment successfull for order <b>Pinelabs Payment Id: </b>'.$response['order_id']. ', <b>Txn Status:</b> '. $response['status']);
         $order->save();
-		$this->_logger->info(__LINE__ . ' | '.__FUNCTION__.' Save the order after successful response from Pine PG for order id:'.$response['order_id'].'and Pine PG Txn ID:'.$response['order_id'] );
+		$this->pineLogger->info(__LINE__ . ' | '.__FUNCTION__.' Save the order after successful response from Pine PG for order id:'.$response['order_id'].'and Pine PG Txn ID:'.$response['order_id'] );
     }
 
 	private function checkCartType($product_info_data,$params,$order)
@@ -602,7 +605,7 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 
 		
 
-		$this->logger->info('PineItems - '.json_encode($items).' Ordertotal-amount-before-discount - '.$total_amt. ' Discount - '. $discount);
+		$this->pineLogger->info('PineItems - '.json_encode($items).' Ordertotal-amount-before-discount - '.$total_amt. ' Discount - '. $discount);
 
 		foreach($items as $key => $value){
 				$single_item_percentage = ($items[$key]->product_amount/$total_amt) * $discount;

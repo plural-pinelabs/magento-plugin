@@ -72,7 +72,7 @@ abstract class PinePGAbstract extends \Magento\Framework\App\Action\Action imple
         \Magento\Checkout\Model\Session $checkoutSession,
         \Magento\Quote\Api\CartRepositoryInterface $quoteRepository,
         \Magento\Sales\Model\OrderFactory $orderFactory,
-        \Psr\Log\LoggerInterface $logger,
+        \Pinelabs\PinePGGateway\Logger\Logger $logger,
         \Pinelabs\PinePGGateway\Model\PinePGPaymentMethod $paymentMethod,
         \Pinelabs\PinePGGateway\Helper\PinePG $checkoutHelper,
         \Magento\Quote\Api\CartManagementInterface $cartManagement,
