@@ -352,6 +352,9 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
         throw new \Exception("Amount calculation error - totals don't match");
     }
 
+    $partPaymentEnabled = $this->getConfigData('enable_down_payment') === '1';
+    $this->pineLogger->info("Down Payment Enabled? " . ($partPaymentEnabled ? 'YES' : 'NO'));
+
     // Final Payload
     $payload = [
         'merchant_order_reference' => $order->getIncrementId() . '_' . date("ymdHis"),
@@ -378,6 +381,10 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
             'products' => $products,
         ],
     ];
+
+    if ($partPaymentEnabled) {
+    $payload['part_payment'] = true;
+}
 
     $payloadJson = json_encode($payload, JSON_PRETTY_PRINT);
     $this->pineLogger->info(__LINE__ . ' | ' . __FUNCTION__ . ' Request Payload: ' . $payloadJson);
