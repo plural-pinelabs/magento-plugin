@@ -5,7 +5,7 @@
 */
 -->
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../../../lib/internal/Magento/Framework/Module/etc/module.xsd">
-  <module name="Pinelabs_PinePGGateway" setup_version="2.3.1">
+  <module name="Pinelabs_PinePGGateway" >
   <sequence>
             <module name="Magento_Checkout"/>
             <module name="Magento_Sales"/>
