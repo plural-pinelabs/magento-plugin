@@ -159,64 +159,7 @@ class PinePG extends AbstractHelper
 
 
 
-    public function getAccessToken()
-	  {
-		  
-
-        $env = $this->scopeConfig->getValue('payment/pinepgpaymentmethod/PayEnvironment', \Magento\Store\Model\ScopeInterface::SCOPE_STORE);
-        $merchantSecretKey = $this->scopeConfig->getValue('payment/pinepgpaymentmethod/MerchantSecretKey', \Magento\Store\Model\ScopeInterface::SCOPE_STORE);
-        $merchantAccessCode = $this->scopeConfig->getValue('payment/pinepgpaymentmethod/MerchantAccessCode', \Magento\Store\Model\ScopeInterface::SCOPE_STORE);
-
-
-
-        if ($env === 'LIVE') {
-            $url = 'https://api.pluralpay.in/api/auth/v1/token';
-        }else{
-			$url = 'https://pluraluat.v2.pinepg.in/api/auth/v1/token';
-		}
-
-		  $body = json_encode([
-			  'client_id' => $merchantAccessCode,
-			  'client_secret' => $merchantSecretKey,
-			  'grant_type' => 'client_credentials',
-		  ]);
-	  
-		  $headers = [
-			  'Content-Type: application/json',
-		  ];
-	  
-		  // Initialize cURL
-		  $curl = curl_init();
-		  curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, true);
-		  curl_setopt_array($curl, [
-			  CURLOPT_URL => $url,
-			  CURLOPT_RETURNTRANSFER => true, // Return response as string
-			  CURLOPT_HTTPHEADER => $headers, // Set the headers
-			  CURLOPT_POST => true, // HTTP POST method
-			  CURLOPT_POSTFIELDS => $body, // Set the POST data
-		  ]);
-	  
-		  try {
-			  // Execute the request and capture the response
-			  $response = curl_exec($curl);
-	  
-			  if ($response === false) {
-				  throw new \Exception('cURL Error: ' . curl_error($curl));
-			  }
-	  
-			  $response = json_decode($response, true);
-	  
-			  if (isset($response['access_token'])) {
-				  return $response['access_token'];
-			  } else {
-				  throw new \Exception('Failed to retrieve access token');
-			  }
-		  } catch (\Exception $e) {
-			  throw new \Exception('Error during token retrieval: ' . $e->getMessage());
-		  } finally {
-			  curl_close($curl); // Close the cURL session
-		  }
-	  }
+   
 
 
       public function sendRequest($url, $body, $headers)

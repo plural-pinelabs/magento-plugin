@@ -18,42 +18,35 @@
                 <field id="title" translate="label" type="text" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="1">
                     <label>Title</label>
                 </field>
-                <field id="cart" translate="label" type="select" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="0">
+                <field id="cart" translate="label" type="select" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="1">
                     <label>Select Cart Type</label>
                   <source_model>Pinelabs\PinePGGateway\Model\Config\Source\Order\Status\PaymentCartType</source_model>
                 </field>
-                <field id="order_status" translate="label" type="select" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="0">
+                <field id="order_status" translate="label" type="select" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="1">
                     <label>New Order Status</label>
                     <source_model>Pinelabs\PinePGGateway\Model\Config\Source\Order\Status\Pendingpayment</source_model>
                 </field>
-                <field id="MerchantId" translate="label" type="text" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="0">
+                <field id="MerchantId" translate="label" type="text" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="1">
                     <label>Merchant Id</label>
                    
                 </field>
-                <field id="MerchantAccessCode" translate="label" type="password" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="0">
+                <field id="MerchantAccessCode" translate="label" type="password" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="1">
                     <label>Merchant Access Code</label>
                   
                 </field>
-				 <field id="MerchantSecretKey" translate="label" type="password" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="0">
+				 <field id="MerchantSecretKey" translate="label" type="password" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="1">
                     <label>Merchant Secret Key</label>
                  
                 </field>
-				 <field id="MerchantPaymentMode" translate="label" type="text" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="0">
+				 <field id="MerchantPaymentMode" translate="label" type="text" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="1">
                     <label>Merchant Payment Mode</label>
                  
                 </field>
-				  <field id="PayEnvironment" translate="label" type="select" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="0">
+				  <field id="PayEnvironment" translate="label" type="select" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="1">
                     <label>Environment</label>
                   <source_model>Pinelabs\PinePGGateway\Model\Config\Source\Order\Status\PaymentEnvironment</source_model>
                 </field>
-				<!--<field id="production_url" translate="label" type="text" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="0">
-                    <label>Production URL</label>
-                 
-                </field>
-				<field id="sandbox_url" translate="label" type="text" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="0">
-                    <label>SandBox URL</label>
-                 
-                </field>-->
+				
                 
             </group>
             <!-- payment-group -->

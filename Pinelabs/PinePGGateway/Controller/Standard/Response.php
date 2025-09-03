@@ -130,9 +130,8 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
             }
 
             // Mark the order as successful
-            $order->setState(\Magento\Sales\Model\Order::STATE_PROCESSING)
-                ->setStatus(\Magento\Sales\Model\Order::STATE_PROCESSING);
-
+            $payment = $order->getPayment();
+            $payment->registerCaptureNotification($order->getGrandTotal());
             $order->save();
 
             $DateTime=date('Y-m-d H:i:s');
