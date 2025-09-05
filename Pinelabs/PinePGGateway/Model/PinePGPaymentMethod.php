@@ -116,8 +116,9 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 	public function callOrderApi($order)
 {
     $this->pineLogger->info(__LINE__ . ' | ' . __FUNCTION__ . ' Complete Order Data: ' . json_encode($order->getData(), JSON_PRETTY_PRINT));
+    $storeId=$order->getStoreId();
 
-    $env = $this->getConfigData('PayEnvironment');
+    $env = $this->getConfigData('PayEnvironment', $storeId);
     $url = ($env === 'LIVE')
         ? 'https://api.pluralpay.in/api/checkout/v1/orders'
         : 'https://pluraluat.v2.pinepg.in/api/checkout/v1/orders';
@@ -265,8 +266,8 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
     // Make API call
     $headers = [
         'Content-Type: application/json',
-        'Merchant-ID: ' . $this->getConfigData("MerchantId"),
-        'Authorization: Bearer ' . $this->getAccessToken(),
+        'Merchant-ID: ' . $this->getConfigData("MerchantId", $storeId),
+        'Authorization: Bearer ' . $this->getAccessToken($storeId),
     ];
 
     $curl = curl_init();
@@ -323,12 +324,12 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 	}
 
 
-	public function callEnquiryApi($orderId) {
-
+	public function callEnquiryApi($orderId, $storeId = null) {
+ 
 		
 
-		$authorization = $this->getAccessToken();
-		$env = $this->getConfigData('PayEnvironment');
+		$authorization = $this->getAccessToken($storeId);
+        $env = $this->getConfigData('PayEnvironment', $storeId);
 	
 		// Define the URL based on the environment
 		$url = ($env === 'LIVE') 
@@ -376,11 +377,11 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 		}
 	}
 	  
-	  public function getAccessToken()
+	  public function getAccessToken($storeId = null)
 	  {
 		  
 
-		  $env = $this->getConfigData('PayEnvironment');
+		  $env = $this->getConfigData('PayEnvironment', $storeId);
         if ($env === 'LIVE') {
             $url = 'https://api.pluralpay.in/api/auth/v1/token';
         }else{
@@ -388,8 +389,8 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 		}
 
 		  $body = json_encode([
-			  'client_id' => $this->getConfigData("MerchantAccessCode"),
-			  'client_secret' => $this->getConfigData("MerchantSecretKey"),
+			  'client_id' => $this->getConfigData("MerchantAccessCode",$storeId),
+			  'client_secret' => $this->getConfigData("MerchantSecretKey",$storeId),
 			  'grant_type' => 'client_credentials',
 		  ]);
 	  

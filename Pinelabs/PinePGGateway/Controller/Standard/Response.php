@@ -78,13 +78,28 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
             $statusEnquiry = $callbackData['status'];
             $maxRetries = 3;
             $retryDelay = 20; // in seconds
+
+
+            $order = $this->orderFactory->create()->load($orderId, 'plural_order_id');
+
+            if (!$order->getId()) {
+                $this->_logger->error("Response.php: No Magento order found for plural_order_id=$orderId");
+                $resultRedirect->setPath('checkout/onepage/failure');
+                return $resultRedirect;
+            }
+
+            $entityId = $order->getId();
+            $storeId = $order->getStoreId();
+
+            $this->_logger->info("Response.php: Loaded order entityId=$entityId plural_order_id=$orderId storeId=$storeId");
             
             if (!empty($orderId)) {
                 for ($i = 0; $i < $maxRetries; $i++) {
-                    $EnquiryApiResponse = $this->pinePGPaymentMethod->callEnquiryApi($orderId);
+                    $EnquiryApiResponse = $this->pinePGPaymentMethod->callEnquiryApi($orderId, $storeId);
                     $statusEnquiry = $EnquiryApiResponse['data']['status'] ?? null;
             
-                    $this->_logger->info("Retry #$i - Status from Enquiry API for order_id $orderId: $statusEnquiry");
+                    $this->_logger->info("Response.php: Enquiry API response plural_order_id=$orderId storeId=$storeId " . json_encode($EnquiryApiResponse));
+                    
             
                     if ($statusEnquiry === 'PROCESSED') {
                         break;
