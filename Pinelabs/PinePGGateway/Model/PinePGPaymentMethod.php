@@ -287,6 +287,11 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
         }
 
         $response = json_decode($response, true);
+
+         $this->pineLogger->info(
+    __LINE__ . ' | ' . __FUNCTION__ . ' Response Payload Data: ' . json_encode($response, JSON_PRETTY_PRINT)
+);
+
         if (isset($response['redirect_url']) && $response['response_code'] === 200) {
             $order->setData('plural_order_id', $response['order_id']);
             $this->orderRepository->save($order);
