@@ -19,18 +19,20 @@
 
 # Supported Magento Version
 
- - 2.3.4 , 2.4.2
+ - 2.3.4 , 2.4.2 ,2.4.7
 
 # Features
 
- - Pinelabs Edge [read more](https://www.pinelabs.com/developer/apis) integration to magento 2.
+- Click link to check all api use in this plugin  [read more](https://developer.pinelabsonline.com/reference/orders-create) .
+
+ - Pinelabs Online [read more](https://developer.pinelabsonline.com/reference/orders-create) integration to magento 2.
  
 # How To Configure
 
  1. Login Into Admin Panel.
  2. Go to Stores Configuration.
  3. Go to payment Methods Tab inside Sales Section.
- 4. Scroll down and locate Pinelabs Edge.
+ 4. Scroll down and locate Pinelabs Online.
  5. Fill your details Merchant Id, Merchant Secret, Merchant Access Code.
 
 # Support / Help
