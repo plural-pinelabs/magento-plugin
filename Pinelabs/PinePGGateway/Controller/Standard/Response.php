@@ -17,9 +17,7 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
     protected $customer;
     protected $customerSession;
     protected $checkoutSession;
-
     protected $orderFactory;
-
     protected $orderSender;
 
     public function __construct(
@@ -57,24 +55,27 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
     public function execute()
     {
         $resultRedirect = $this->resultRedirectFactory->create();
+        $orderId = null;
 
         try {
             $callbackData = $this->getRequest()->getPostValue();
-
 
             // Log the callback data for debugging
             $this->_logger->info('PinePG callback data: ' . json_encode($callbackData));
 
             if (!isset($callbackData['order_id'])) {
                 $this->_logger->error('No order_id received in callback data.'. json_encode($callbackData));
+                
+                // Restore customer session and quote on failure
+                $this->restoreCustomerAndCart();
+                $this->checkoutSession->restoreQuote();
+                
                 $resultRedirect->setPath('checkout/onepage/failure');
                 return $resultRedirect;
             }
 
             $paymentMethod = $this->getPaymentMethod();
-
             $orderId = $callbackData['order_id'];
-
             $statusEnquiry = $callbackData['status'];
             $maxRetries = 3;
             $retryDelay = 20; // in seconds
@@ -92,76 +93,89 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
             
                     // Delay before next attempt
                     if ($i < $maxRetries - 1) {
-                        sleep($retryDelay); // Wait 15 seconds
+                        sleep($retryDelay);
                     }
                 }
             }
             
             if ($statusEnquiry !== 'PROCESSED') {
                 $this->_logger->error("Order is not processed after $maxRetries retries: " . $orderId);
+                
+                // Restore customer session and quote on failure
+                $this->restoreCustomerAndCart($orderId);
+                $this->checkoutSession->restoreQuote();
+                
                 $resultRedirect->setPath('checkout/onepage/failure');
                 return $resultRedirect;
             }
 
-
-
-                $order = $this->orderFactory->create()->load($orderId, 'plural_order_id');
-
+            $order = $this->orderFactory->create()->load($orderId, 'plural_order_id');
                
-                if ($order->getId()) {
-                    $entityId =  $order->getId(); // entity_id
-                }
-
-           
+            if ($order->getId()) {
+                $entityId =  $order->getId(); // entity_id
+            }
 
             if (!$entityId) {
                 $this->_logger->error('No matching order found for order_id: ' . $orderId);
+                
+                // Restore customer session and quote on failure
+                $this->restoreCustomerAndCart($orderId);
+                $this->checkoutSession->restoreQuote();
+                
                 $resultRedirect->setPath('checkout/onepage/failure');
                 return $resultRedirect;
             }
-
-            
-          
 
             if (!$order->getId()) {
                 $this->_logger->error('Failed to load order with entity_id: ' . $entityId);
+                
+                // Restore customer session and quote on failure
+                $this->restoreCustomerAndCart($orderId);
+                $this->checkoutSession->restoreQuote();
+                
                 $resultRedirect->setPath('checkout/onepage/failure');
                 return $resultRedirect;
             }
+
+            // Log customer details before session restoration
+            $this->_logger->info("Customer details - ID: " . $order->getCustomerId() . 
+                                ", Email: " . $order->getCustomerEmail() . 
+                                ", Is Guest: " . (int)$order->getCustomerIsGuest());
 
             // Mark the order as successful
             $payment = $order->getPayment();
             $payment->registerCaptureNotification($order->getGrandTotal());
 
-             $order->setState(\Magento\Sales\Model\Order::STATE_PROCESSING)
+            $order->setState(\Magento\Sales\Model\Order::STATE_PROCESSING)
                 ->setStatus(\Magento\Sales\Model\Order::STATE_PROCESSING);
                 
             $order->save();
 
-            $DateTime=date('Y-m-d H:i:s');
+            $DateTime = date('Y-m-d H:i:s');
             $payment = $order->getPayment();
 
             $paymentMethod->postProcessing($order, $payment, $callbackData);
 
             $this->_logger->info('Checkout Session Order ID: ' . $this->checkoutSession->getLastOrderId());
-
-
             $this->_logger->info('Order marked as successful. Entity ID: ' . $entityId);
 
-            //add sessions to show success page if session is lost
+            // CRITICAL FIX: Restore customer session
+            $this->restoreCustomerSession($order);
 
+            // Set checkout session values to show success page
             if ($order && $order->getId() && $order->getQuoteId() && $order->getIncrementId()) {
                 $this->checkoutSession->setLastQuoteId($order->getQuoteId());
                 $this->checkoutSession->setLastSuccessQuoteId($order->getQuoteId());
                 $this->checkoutSession->setLastOrderId($order->getId());
                 $this->checkoutSession->setLastRealOrderId($order->getIncrementId());
                 $this->checkoutSession->setLastOrderStatus($order->getStatus());
+                
+                $this->_logger->info('Checkout session values set - QuoteId: ' . $order->getQuoteId() . 
+                                    ', OrderId: ' . $order->getId() . 
+                                    ', RealOrderId: ' . $order->getIncrementId());
             } else {
                 $this->_logger->error('Missing order data: Cannot set checkout session values.');
             }
-                
-
-            //add sessions to show success page if session is lost
 
             // Optionally send order confirmation email
             try {
@@ -174,13 +188,132 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
         } catch (\Magento\Framework\Exception\LocalizedException $e) {
             $this->messageManager->addExceptionMessage($e, $e->getMessage());
             $this->_logger->error('LocalizedException: ' . $e->getMessage());
+            
+            // Restore customer session and quote on exception
+            $this->restoreCustomerAndCart($orderId);
+            $this->checkoutSession->restoreQuote();
+            
             $resultRedirect->setPath('checkout/onepage/failure');
         } catch (\Exception $e) {
             $this->messageManager->addExceptionMessage($e, __('We can\'t place the order.'));
             $this->_logger->error('Exception: ' . $e->getMessage());
+            
+            // Restore customer session and quote on exception
+            $this->restoreCustomerAndCart($orderId);
+            $this->checkoutSession->restoreQuote();
+            
             $resultRedirect->setPath('checkout/onepage/failure');
         }
 
         return $resultRedirect;
+    }
+
+    /**
+     * Restore customer session
+     *
+     * @param \Magento\Sales\Model\Order $order
+     * @return void
+     */
+    private function restoreCustomerSession($order)
+    {
+        try {
+            // Skip if guest order
+            if ($order->getCustomerIsGuest()) {
+                $this->_logger->info('Guest order - skipping customer session restoration');
+                return;
+            }
+
+            $customerId = $order->getCustomerId();
+
+            $this->_logger->info("Attempting to restore customer session - Customer ID: {$customerId}");
+
+            if (!$customerId) {
+                $this->_logger->error('No customer ID found in order');
+                return;
+            }
+
+            // Use ObjectManager to get CustomerFactory (to avoid constructor changes)
+            $objectManager = \Magento\Framework\App\ObjectManager::getInstance();
+            $customerFactory = $objectManager->get(\Magento\Customer\Model\CustomerFactory::class);
+            
+            // Load customer
+            $customer = $customerFactory->create()->load($customerId);
+
+            if (!$customer->getId()) {
+                $this->_logger->error("Customer not found with ID: {$customerId}");
+                return;
+            }
+
+            $this->_logger->info("Customer loaded successfully - ID: {$customer->getId()}, Email: {$customer->getEmail()}");
+
+            // Set customer as logged in
+            $this->customerSession->setCustomerAsLoggedIn($customer);
+            
+            // Regenerate session ID for security
+            $this->customerSession->regenerateId();
+            
+            $this->_logger->info("Customer session restored successfully - Customer ID: {$customerId}");
+            $this->_logger->info("Current customer session ID: " . $this->customerSession->getCustomerId());
+            $this->_logger->info("Is customer logged in: " . (int)$this->customerSession->isLoggedIn());
+
+        } catch (\Exception $e) {
+            $this->_logger->error('Error restoring customer session: ' . $e->getMessage());
+            $this->_logger->error('Stack trace: ' . $e->getTraceAsString());
+        }
+    }
+
+    /**
+     * Restore customer session and quote
+     *
+     * @param string|null $orderId
+     * @return void
+     */
+    private function restoreCustomerAndCart($orderId = null)
+    {
+        try {
+            $customer = null;
+
+            $this->_logger->info("Starting restoreCustomerAndCart - Order ID: " . ($orderId ?: 'null'));
+
+            // Use ObjectManager to get CustomerFactory (to avoid constructor changes)
+            $objectManager = \Magento\Framework\App\ObjectManager::getInstance();
+            $customerFactory = $objectManager->get(\Magento\Customer\Model\CustomerFactory::class);
+
+            // Case 1: Restore by OrderId
+            if ($orderId) {
+                $orderByPlural = $this->orderFactory->create()->load($orderId, 'plural_order_id');
+                if ($orderByPlural && $orderByPlural->getId() && !$orderByPlural->getCustomerIsGuest()) {
+                    $customer = $customerFactory->create()->load($orderByPlural->getCustomerId());
+                    $this->_logger->info("Found order for restoration - Customer ID: " . $orderByPlural->getCustomerId());
+                }
+            }
+
+            // Case 2: If no order or guest, still check current session customer
+            if (!$customer || !$customer->getId()) {
+                if ($this->customerSession->getCustomerId()) {
+                    $customer = $customerFactory->create()->load($this->customerSession->getCustomerId());
+                    $this->_logger->info("Using session customer ID: " . $this->customerSession->getCustomerId());
+                }
+            }
+
+            // If valid customer found → restore login session
+            if ($customer && $customer->getId()) {
+                $this->customerSession->setCustomerAsLoggedIn($customer);
+                $this->customerSession->regenerateId();
+                $this->_logger->info('Customer session restored for ID: ' . $customer->getId());
+            } else {
+                $this->_logger->info('No valid customer found to restore session.');
+            }
+        } catch (\Exception $e) {
+            $this->_logger->error('Error restoring session: ' . $e->getMessage());
+        }
+
+        // Always attempt to restore quote
+        try {
+            $this->checkoutSession->restoreQuote();
+            $this->_logger->info('Quote restored for session.');
+        } catch (\Exception $e) {
+            $this->_logger->error('Error restoring quote: ' . $e->getMessage());
+        }
     }
 }
