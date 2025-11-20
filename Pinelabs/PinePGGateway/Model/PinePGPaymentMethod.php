@@ -6,6 +6,7 @@ use Magento\Sales\Api\Data\TransactionInterface;
 use Magento\Framework\Session\Config;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Pinelabs\PinePGGateway\Logger\Logger;
+use Magento\Store\Model\StoreManagerInterface;
 
 /**
  * Pay In Store payment method model
@@ -25,6 +26,7 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 	protected  $logger;
 	protected  $pineLogger;
 	private $orderRepository;
+    private $storeManager;
 
     /**
      * 
@@ -54,7 +56,8 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 		\Magento\Directory\Model\Country $countryHelper,
 		OrderRepositoryInterface $orderRepository,
 		 Logger $pineLogger,
-		\Magento\Payment\Model\Method\Logger $paymentLogger
+		\Magento\Payment\Model\Method\Logger $paymentLogger,
+        StoreManagerInterface $storeManager,
 
 		
     ) {
@@ -65,6 +68,7 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
         $this->cart = $cart;
 		$this->orderRepository = $orderRepository;
 		$this->_countryHelper = $countryHelper;
+        $this->storeManager = $storeManager;
 
         parent::__construct(
             $context,
@@ -123,7 +127,7 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
         ? 'https://api.pluralpay.in/api/checkout/v1/orders'
         : 'https://pluraluat.v2.pinepg.in/api/checkout/v1/orders';
 
-    $callback_url = $this->getCallbackUrl();
+    $callback_url = $this->getCallbackUrl($storeId);
     $telephone = $order->getBillingAddress()->getTelephone();
     $onlyNumbers = preg_replace('/\D/', '', $telephone) ?: '9999999999';
 
@@ -309,19 +313,37 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 
 
 
-	  public function getCallbackUrl() {
-		// Check if running locally
-		if (strpos($_SERVER['HTTP_HOST'], 'localhost') !== false) {
-			// Local environment
-			return 'http://localhost/magento/pinepg/standard/response';
-		}
-	
-		// Production or staging environment
-		$protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
-		$domain = $protocol . $_SERVER['HTTP_HOST'];
-		
-		return $domain . '/pinepg/standard/response';
-	}
+	 public function getCallbackUrl($storeId = null) {
+    try {
+        // Use default store if $storeId not provided
+        if (!$storeId) {
+            $store = $this->storeManager->getDefaultStoreView();
+        } else {
+            // Try to get the store; fallback to default if invalid
+            try {
+                $store = $this->storeManager->getStore($storeId);
+            } catch (\Magento\Framework\Exception\NoSuchEntityException $e) {
+                $store = $this->storeManager->getDefaultStoreView();
+            }
+        }
+
+        // Get base URL for the store (includes store code if enabled)
+        $baseUrl = $store->getBaseUrl(\Magento\Framework\UrlInterface::URL_TYPE_LINK);
+
+        // Return full callback URL
+        return rtrim($baseUrl, '/') . '/pinepg/standard/response';
+
+    } catch (\Exception $e) {
+        // If something really fails, return the default store's URL
+        $store = $this->storeManager->getDefaultStoreView();
+        $baseUrl = $store->getBaseUrl(\Magento\Framework\UrlInterface::URL_TYPE_LINK);
+        return rtrim($baseUrl, '/') . '/pinepg/standard/response';
+    }
+}
+
+
+
+
 
 
 	public function callEnquiryApi($orderId, $storeId = null) {
