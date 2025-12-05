@@ -79,6 +79,39 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
             $statusEnquiry = $callbackData['status'];
             $maxRetries = 3;
             $retryDelay = 20; // in seconds
+
+            $order = $this->orderFactory->create()->load($orderId, 'plural_order_id');
+
+
+              // ✅ HANDLE CANCELLED ORDER
+if ($statusEnquiry === 'CANCELLED') {
+    $this->_logger->info("Order cancelled by customer/payment gateway: {$orderId}");
+ 
+    if ($order->canCancel()) {
+        $order->cancel();
+        $order->setState(\Magento\Sales\Model\Order::STATE_CANCELED)
+              ->setStatus(\Magento\Sales\Model\Order::STATE_CANCELED);
+        $order->addStatusHistoryComment(
+            "Order cancelled by customer on Pinelabs Checkout , Pinelabs Order Id : {$orderId}"
+        );
+        $order->save();
+ 
+        $this->_logger->info("Magento order cancelled successfully. Entity ID: " . $order->getId());
+    } else {
+        $this->_logger->error("Order cannot be cancelled. Current state: " . $order->getState());
+    }
+ 
+    // Restore session & cart
+    $this->restoreCustomerAndCart($orderId);
+    $this->checkoutSession->restoreQuote();
+ 
+    $resultRedirect->setPath('checkout/onepage/failure');
+    return $resultRedirect;
+}
+ 
+// ✅ HANDLE CANCELLED ORDER
+ 
+            
             
             if (!empty($orderId)) {
                 for ($i = 0; $i < $maxRetries; $i++) {
@@ -97,6 +130,8 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
                     }
                 }
             }
+
+            
             
             if ($statusEnquiry !== 'PROCESSED') {
                 $this->_logger->error("Order is not processed after $maxRetries retries: " . $orderId);
@@ -109,7 +144,7 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
                 return $resultRedirect;
             }
 
-            $order = $this->orderFactory->create()->load($orderId, 'plural_order_id');
+            
                
             if ($order->getId()) {
                 $entityId =  $order->getId(); // entity_id
