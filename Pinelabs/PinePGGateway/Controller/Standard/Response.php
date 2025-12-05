@@ -97,6 +97,35 @@ class Response extends \Pinelabs\PinePGGateway\Controller\PinePGAbstract
             $storeId = $order->getStoreId();
 
             $this->_logger->info("Response.php: Loaded order entityId=$entityId plural_order_id=$orderId storeId=$storeId");
+
+              // ✅ HANDLE CANCELLED ORDER
+if ($statusEnquiry === 'CANCELLED') {
+    $this->_logger->info("Order cancelled by customer/payment gateway: {$orderId}");
+ 
+    if ($order->canCancel()) {
+        $order->cancel();
+        $order->setState(\Magento\Sales\Model\Order::STATE_CANCELED)
+              ->setStatus(\Magento\Sales\Model\Order::STATE_CANCELED);
+        $order->addStatusHistoryComment(
+            "Order cancelled by customer on Pinelabs Checkout , Pinelabs Order Id : {$orderId}"
+        );
+        $order->save();
+ 
+        $this->_logger->info("Magento order cancelled successfully. Entity ID: " . $order->getId());
+    } else {
+        $this->_logger->error("Order cannot be cancelled. Current state: " . $order->getState());
+    }
+ 
+    // Restore session & cart
+    $this->restoreCustomerAndCart($orderId);
+    $this->checkoutSession->restoreQuote();
+ 
+    $resultRedirect->setPath('checkout/onepage/failure');
+    return $resultRedirect;
+}
+ 
+// ✅ HANDLE CANCELLED ORDER
+ 
             
             if (!empty($orderId)) {
                 for ($i = 0; $i < $maxRetries; $i++) {
