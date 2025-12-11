@@ -249,8 +249,8 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
         'purchase_details' => [
             'customer' => [
                 'email_id' => $billingAddressData->getEmail(),
-                'first_name' => $billingAddressData->getFirstname(),
-                'last_name' => $billingAddressData->getLastname(),
+                'first_name' => trim($billingAddressData->getFirstname()),
+                'last_name' => trim($billingAddressData->getLastname()),
                 'mobile_number' => $onlyNumbers,
                 'billing_address' => $billingData,
                 'shipping_address' => $shippingData,
