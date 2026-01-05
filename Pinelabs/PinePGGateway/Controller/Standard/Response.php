@@ -298,57 +298,58 @@ if ($statusEnquiry === 'CANCELLED') {
     }
 
     /**
-     * Restore customer session and quote
-     *
-     * @param string|null $orderId
-     * @return void
-     */
-    private function restoreCustomerAndCart($orderId = null)
-    {
-        try {
-            $customer = null;
+ * Restore customer session and quote/cart
+ *
+ * @param string|null $orderId
+ * @return void
+ */
+private function restoreCustomerAndCart($orderId = null)
+{
+    try {
+        $customer = null;
 
-            $this->_logger->info("Starting restoreCustomerAndCart - Order ID: " . ($orderId ?: 'null'));
+        $objectManager = \Magento\Framework\App\ObjectManager::getInstance();
+        $customerFactory = $objectManager->get(\Magento\Customer\Model\CustomerFactory::class);
 
-            // Use ObjectManager to get CustomerFactory (to avoid constructor changes)
-            $objectManager = \Magento\Framework\App\ObjectManager::getInstance();
-            $customerFactory = $objectManager->get(\Magento\Customer\Model\CustomerFactory::class);
+        // If orderId provided, restore customer from order
+        if ($orderId) {
+            $order = $this->orderFactory->create()->load($orderId, 'plural_order_id');
+            if ($order && $order->getId() && !$order->getCustomerIsGuest()) {
+                $customer = $customerFactory->create()->load($order->getCustomerId());
+            }
 
-            // Case 1: Restore by OrderId
-            if ($orderId) {
-                $orderByPlural = $this->orderFactory->create()->load($orderId, 'plural_order_id');
-                if ($orderByPlural && $orderByPlural->getId() && !$orderByPlural->getCustomerIsGuest()) {
-                    $customer = $customerFactory->create()->load($orderByPlural->getCustomerId());
-                    $this->_logger->info("Found order for restoration - Customer ID: " . $orderByPlural->getCustomerId());
+            // Restore quote from order
+            if ($order && $order->getQuoteId()) {
+                $quote = $objectManager->create(\Magento\Quote\Model\Quote::class)->load($order->getQuoteId());
+                if ($quote && $quote->getId()) {
+                    $quote->setIsActive(true)->collectTotals()->save();
+                    $this->checkoutSession->replaceQuote($quote);
+                    $this->checkoutSession->setQuoteId($quote->getId());
                 }
             }
-
-            // Case 2: If no order or guest, still check current session customer
-            if (!$customer || !$customer->getId()) {
-                if ($this->customerSession->getCustomerId()) {
-                    $customer = $customerFactory->create()->load($this->customerSession->getCustomerId());
-                    $this->_logger->info("Using session customer ID: " . $this->customerSession->getCustomerId());
-                }
-            }
-
-            // If valid customer found → restore login session
-            if ($customer && $customer->getId()) {
-                $this->customerSession->setCustomerAsLoggedIn($customer);
-                $this->customerSession->regenerateId();
-                $this->_logger->info('Customer session restored for ID: ' . $customer->getId());
-            } else {
-                $this->_logger->info('No valid customer found to restore session.');
-            }
-        } catch (\Exception $e) {
-            $this->_logger->error('Error restoring session: ' . $e->getMessage());
         }
 
-        // Always attempt to restore quote
-        try {
-            $this->checkoutSession->restoreQuote();
-            $this->_logger->info('Quote restored for session.');
-        } catch (\Exception $e) {
-            $this->_logger->error('Error restoring quote: ' . $e->getMessage());
+        // If no order or guest, restore customer from session
+        if (!$customer && $this->customerSession->getCustomerId()) {
+            $customer = $customerFactory->create()->load($this->customerSession->getCustomerId());
         }
+
+        // Restore customer login
+        if ($customer && $customer->getId()) {
+            $this->customerSession->setCustomerAsLoggedIn($customer);
+            $this->customerSession->regenerateId();
+        }
+
+    } catch (\Exception $e) {
+        $this->_logger->error('Error restoring customer/cart: ' . $e->getMessage());
     }
+
+    // Always try restoring the quote
+    try {
+        $this->checkoutSession->restoreQuote();
+    } catch (\Exception $e) {
+        $this->_logger->error('Error restoring quote: ' . $e->getMessage());
+    }
+}
+
 }
