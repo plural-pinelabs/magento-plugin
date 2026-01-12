@@ -36,3 +36,28 @@
  5. Fill your details Merchant Id, Merchant Secret, Merchant Access Code.
 
 # Support / Help
+
+
+## 🔔 Webhook Configuration (PinePG)
+
+The PinePG Magento plugin supports secure webhook handling for real-time payment status updates.
+
+### Webhook URL
+Configure the following webhook URL in the PinePG dashboard:
+
+https://merchanturl.com/pinepg/standard/webhook
+
+
+
+> 🔹 Replace `merchanturl.com` with your actual merchant domain.
+
+### Features
+- Supports PinePG V3 webhooks
+- HMAC SHA256 signature verification (Svix format)
+- Replay attack protection using timestamp validation
+- Handles payment success and failure events securely
+
+### Notes
+- The webhook endpoint accepts **POST** requests only
+- Ensure the webhook secret is correctly configured in Magento admin
+- The endpoint is CSRF-exempt by design for external callbacks
