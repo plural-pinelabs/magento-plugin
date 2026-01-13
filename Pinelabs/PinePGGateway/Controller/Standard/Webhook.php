@@ -104,6 +104,10 @@ class Webhook extends Action implements CsrfAwareActionInterface
                 return $result->setData(['message' => 'Order already processed']);
             }
 
+             // ✅ MARK ORDER AS PAID WITH AUTO-INVOICE (same as Response.php)
+                $payment = $order->getPayment();
+                $payment->registerCaptureNotification($order->getGrandTotal());
+
             // ✅ Mark order paid
             $order->setState(\Magento\Sales\Model\Order::STATE_PROCESSING)
                 ->setStatus(\Magento\Sales\Model\Order::STATE_PROCESSING);
