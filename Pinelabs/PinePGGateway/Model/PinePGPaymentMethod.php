@@ -180,12 +180,18 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
     $shippingAddress = $order->getShippingAddress();
     $billingAddressData = $billingAddress ?: $shippingAddress;
 
-    $formatAddress = function ($address) {
+    $sanitizeField = function ($value) {
+        // Replace commas and special characters with a space, then collapse multiple spaces
+        $value = preg_replace('/[^a-zA-Z0-9\s.\-]/', ' ', $value ?? '');
+        return trim(preg_replace('/\s+/', ' ', $value));
+    };
+
+    $formatAddress = function ($address) use ($sanitizeField) {
         return [
-            'address1' => substr($address->getStreetLine(1), 0, 99),
-            'pincode'  => $address->getPostcode(),
-            'city'     => $address->getCity(),
-            'state'    => $address->getRegion(),
+            'address1' => substr($sanitizeField($address->getStreetLine(1)), 0, 99),
+            'pincode'  => $sanitizeField($address->getPostcode()),
+            'city'     => $sanitizeField($address->getCity()),
+            'state'    => $sanitizeField($address->getRegion()),
             'country'  => $address->getCountryId()
         ];
     };
@@ -299,8 +305,8 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
         'purchase_details' => [
             'customer' => [
                 'email_id' => $billingAddressData->getEmail(),
-                'first_name' => trim($billingAddressData->getFirstname()),
-                'last_name' => trim($billingAddressData->getLastname()),
+                'first_name' => $sanitizeField(trim($billingAddressData->getFirstname())),
+                'last_name' => $sanitizeField(trim($billingAddressData->getLastname())),
                 'mobile_number' => $onlyNumbers,
                 'billing_address' => $billingData,
                 'shipping_address' => $shippingData,
