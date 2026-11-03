@@ -99,7 +99,7 @@ class PinePG extends AbstractHelper
     // Prepare the body for the refund request
     $body = json_encode([
         'merchant_order_reference' => $merchantOrderReference,
-        'refund_amount' => ['value' => $refundAmount, 'currency' => 'INR'],
+        'order_amount' => ['value' => $refundAmount, 'currency' => 'INR'],
         'refund_reason' => $reason,
     ]);
 

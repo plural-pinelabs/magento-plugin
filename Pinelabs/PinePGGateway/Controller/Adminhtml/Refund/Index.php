@@ -67,14 +67,16 @@ class Index extends Action
 
             $orderId = $this->getRequest()->getParam('order_id');
             $amount = $this->getRequest()->getParam('amount');
-            $reason = $this->getRequest()->getParam('reason');
+            $reason = $this->getRequest()->getParam('reason') ?: 'Magento Admin Refund';
 
             $this->logger->info('Refund process started with order id '.$orderId.' and amount is '.$amount);
 
             // Basic parameter validation
-            if (!$orderId || !$amount) {
+            if (!$orderId || !is_numeric($amount) || (float) $amount <= 0) {
                 throw new \Exception(__('Missing required parameters: order_id or amount.'));
             }
+
+            $amount = round((float) $amount, 2);
 
             // Load the order
             $order = $this->orderRepository->get($orderId);
@@ -82,11 +84,36 @@ class Index extends Action
                 throw new \Exception(__('Order not found with ID: %1', $orderId));
             }
 
-            // Log order data for debugging
-            $this->logger->info('Order Data loaded: ' . json_encode($order->getData()));
+            $remainingRefundableAmount = round(
+                (float) $order->getGrandTotal() - (float) $order->getTotalRefunded(),
+                2
+            );
+
+            if ($amount > $remainingRefundableAmount) {
+                throw new \Exception(__(
+                    'Refund amount %1 exceeds the remaining refundable amount %2.',
+                    $amount,
+                    $remainingRefundableAmount
+                ));
+            }
+
+            $isFullRefund = abs($amount - $remainingRefundableAmount) < 0.01;
+
+            $this->logger->info('Order loaded for refund.', [
+                'order_id' => $order->getIncrementId(),
+                'requested_amount' => $amount,
+                'remaining_refundable_amount' => $remainingRefundableAmount,
+                'is_full_refund' => $isFullRefund
+            ]);
 
             // Process the refund
-            $refundResponse = $this->pinePGHelper->processRefund($order->getId(),$order->getGrandTotal(), $reason);
+            $refundResponse = $this->pinePGHelper->processRefund(
+                $order->getId(),
+                $amount,
+                $reason,
+                true,
+                $isFullRefund
+            );
 
             $this->logger->info('Refund Response for order id '.$orderId.' Response: '. json_encode($refundResponse));
 
