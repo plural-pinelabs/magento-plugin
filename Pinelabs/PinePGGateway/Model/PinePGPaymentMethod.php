@@ -5,6 +5,7 @@ namespace Pinelabs\PinePGGateway\Model;
 use Magento\Sales\Api\Data\TransactionInterface;
 use Magento\Framework\Session\Config;
 use Magento\Sales\Api\OrderRepositoryInterface;
+use Magento\Bundle\Model\Product\Type as BundleProductType;
 use Pinelabs\PinePGGateway\Logger\Logger;
 use Magento\Store\Model\StoreManagerInterface;
 
@@ -117,6 +118,97 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
 	 
 	  //validate response
 
+    /**
+     * Return order item data used to build PinePG purchase details.
+     *
+     * Bundle parent SKUs can be generated as "parent-child" by Magento. PinePG
+     * needs the actual child SKU so that SKU-level bank offers are applied.
+     *
+     * @param \Magento\Sales\Model\Order $order
+     * @return array
+     */
+    protected function getPurchaseItems($order)
+    {
+        $purchaseItems = [];
+
+        foreach ($order->getAllVisibleItems() as $item) {
+            $qty = (int) $item->getQtyOrdered();
+            if ($qty <= 0) {
+                continue;
+            }
+
+            $children = $item->getProductType() === BundleProductType::TYPE_CODE
+                ? $item->getChildrenItems()
+                : [];
+
+            if (empty($children)) {
+                $purchaseItems[] = [
+                    'item_id' => $item->getItemId(),
+                    'name' => $item->getName(),
+                    'sku' => $item->getSku(),
+                    'qty' => $qty,
+                    'price_incl_tax' => (float) $item->getBasePriceInclTax(),
+                    'discount_amount' => abs((float) $item->getBaseDiscountAmount()),
+                ];
+                continue;
+            }
+
+            $parentTotal = (float) $item->getBasePriceInclTax() * $qty;
+            $parentDiscount = abs((float) $item->getBaseDiscountAmount());
+            $childRows = [];
+            $childTotal = 0.0;
+
+            foreach ($children as $child) {
+                $childQty = (int) $child->getQtyOrdered();
+                if ($childQty <= 0) {
+                    continue;
+                }
+
+                $rowTotal = (float) $child->getBasePriceInclTax() * $childQty;
+                $childRows[] = [
+                    'item' => $child,
+                    'qty' => $childQty,
+                    'row_total' => $rowTotal,
+                ];
+                $childTotal += $rowTotal;
+            }
+
+            if (empty($childRows)) {
+                $purchaseItems[] = [
+                    'item_id' => $item->getItemId(),
+                    'name' => $item->getName(),
+                    'sku' => $item->getSku(),
+                    'qty' => $qty,
+                    'price_incl_tax' => (float) $item->getBasePriceInclTax(),
+                    'discount_amount' => $parentDiscount,
+                ];
+                continue;
+            }
+
+            $totalWeight = $childTotal > 0
+                ? $childTotal
+                : array_sum(array_column($childRows, 'qty'));
+
+            foreach ($childRows as $childRow) {
+                $child = $childRow['item'];
+                $weight = $childTotal > 0 ? $childRow['row_total'] : $childRow['qty'];
+                $ratio = $totalWeight > 0 ? $weight / $totalWeight : 0;
+                $allocatedTotal = $parentTotal * $ratio;
+
+                $purchaseItems[] = [
+                    'item_id' => $child->getItemId(),
+                    'name' => $child->getName(),
+                    'sku' => $child->getSku(),
+                    'qty' => $childRow['qty'],
+                    'price_incl_tax' => $allocatedTotal / $childRow['qty'],
+                    'discount_amount' => $parentDiscount * $ratio,
+                ];
+            }
+        }
+
+        return $purchaseItems;
+    }
+
 	public function callOrderApi($order)
 {
     $this->pineLogger->info(__LINE__ . ' | ' . __FUNCTION__ . ' Complete Order Data: ' . json_encode($order->getData(), JSON_PRETTY_PRINT));
@@ -158,20 +250,21 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
     // Calculate total price incl. tax for all items (for proportional discount)
     $couponDiscount = abs(floatval($order->getBaseDiscountAmount()));
     $totalItemTaxIncl = 0.0;
+    $purchaseItems = $this->getPurchaseItems($order);
 
-    foreach ($order->getAllVisibleItems() as $item) {
-        $qty = intval($item->getQtyOrdered());
-        $priceInclTax = floatval($item->getBasePriceInclTax());
+    foreach ($purchaseItems as $item) {
+        $qty = $item['qty'];
+        $priceInclTax = $item['price_incl_tax'];
         $totalItemTaxIncl += ($priceInclTax * $qty);
     }
 
-    foreach ($order->getAllVisibleItems() as $item) {
-        $qty = intval($item->getQtyOrdered());
+    foreach ($purchaseItems as $item) {
+        $qty = $item['qty'];
         if ($qty <= 0) continue;
 
-        $priceInclTax = floatval($item->getBasePriceInclTax());
-        $itemDiscount = abs(floatval($item->getBaseDiscountAmount()));
-        $sku = $item->getSku() ?: 'ITEM_' . $item->getItemId() . '_' . rand(10000, 99999);
+        $priceInclTax = $item['price_incl_tax'];
+        $itemDiscount = $item['discount_amount'];
+        $sku = $item['sku'] ?: 'ITEM_' . $item['item_id'] . '_' . rand(10000, 99999);
 
         $itemTotal = $priceInclTax * $qty;
 
@@ -186,11 +279,11 @@ class PinePGPaymentMethod extends \Magento\Payment\Model\Method\AbstractMethod
         $finalItemPricePaise = intval(round($finalItemPrice * 100));
 
         if ($finalItemPricePaise <= 0) {
-            $this->pineLogger->info("Skipping product with 0 price after discount: {$item->getName()} (SKU: $sku)");
+            $this->pineLogger->info("Skipping product with 0 price after discount: {$item['name']} (SKU: $sku)");
             continue;
         }
 
-        $this->pineLogger->info("Item: {$item->getName()}, SKU: $sku, PriceInclTax: $priceInclTax, Qty: $qty, ItemDiscount: $itemDiscount, CartDiscountShare: $cartDiscountShare, FinalPrice: $finalItemPricePaise");
+        $this->pineLogger->info("Item: {$item['name']}, SKU: $sku, PriceInclTax: $priceInclTax, Qty: $qty, ItemDiscount: $itemDiscount, CartDiscountShare: $cartDiscountShare, FinalPrice: $finalItemPricePaise");
 
         for ($i = 0; $i < $qty; $i++) {
             $products[] = [
